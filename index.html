@@ -346,7 +346,7 @@ const DEFAULT_S = {
   hist: {},
   goal: 20, sound: true, sfx: true, theme: 'auto', book: 'cet4',
   exp: 0, lastTab: 'home', lastBackup: 0, schemaV: 2, hintWX: false, hintHome: false,
-  ttsCloud: false, ttsVoice: 'nova',
+  ttsCloud: false, ttsVoice: 'nova', ttsNet: true, ttsAccent: 'us',
   ai: { key: '', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
 };
 let S;
@@ -507,6 +507,44 @@ const TTS = {
     }
     return null;
   },
+  netAudio: null, lastEngine: '', _wToast: false,
+  playNet(text, opts) {
+    return new Promise(resolve => {
+      try {
+        const a = this.netAudio || (this.netAudio = new Audio());
+        a.onended = null; a.onerror = null;
+        const q = encodeURIComponent(String(text).slice(0, 200));
+        a.src = 'https://dict.youdao.com/dictvoice?audio=' + q + '&type=' + (S.ttsAccent === 'uk' ? 1 : 2);
+        let done = false;
+        const fin = ok => { if (done) return; done = true; if (!ok) { a.onended = a.onerror = null; } resolve(ok); };
+        a.onended = () => { fin(true); if (opts.onend) opts.onend(); };
+        a.onerror = () => fin(false);
+        this.audio = a;
+        const p = a.play();
+        const to = setTimeout(() => fin(false), 8000);
+        if (p && p.then) p.then(() => { clearTimeout(to); fin(true); }).catch(() => { clearTimeout(to); fin(false); });
+      } catch (e) { resolve(false); }
+    });
+  },
+  playNetWords(text, opts) {
+    const words = String(text).split(/[^A-Za-z'-]+/).map(w => w.replace(/^['-]+|['-]+$/g, '')).filter(w => w.length && w.length < 30);
+    if (!words.length) return Promise.resolve(false);
+    const self = this;
+    return new Promise(resolve => {
+      let i = 0, any = false;
+      const next = () => {
+        if (i >= words.length) { resolve(any); if (any && opts.onend) opts.onend(); return; }
+        const w = words[i++];
+        let advanced = false;
+        const adv = () => { if (advanced) return; advanced = true; setTimeout(next, 130); };
+        self.playNet(w, { onend: adv }).then(ok => {
+          if (ok) any = true; else adv();
+        });
+        setTimeout(adv, 4000);
+      };
+      next();
+    });
+  },
   async speak(text, opts = {}) {
     if (!S.sound && !opts.force) return;
     if (S.ttsCloud && S.ai.key) {
@@ -519,18 +557,28 @@ const TTS = {
           a.onerror = opts.onerror || null;
           this.audio = a;
           await a.play();
+          this.lastEngine = 'cloud';
           return;
         } catch (e) { this.audio = null; }
-      } else if (Date.now() - this._warnT > 30000) {
-        this._warnT = Date.now();
-        toast('当前接口不支持在线语音，已用系统语音', '🎧');
       }
     }
-    if (!('speechSynthesis' in window)) return;
+    const multi = /\s/.test(String(text).trim());
+    if (S.ttsNet !== false) {
+      if (await this.playNet(text, opts)) { this.lastEngine = 'net'; return; }
+      if (multi && this.noEn) {
+        const ok = await this.playNetWords(text, opts);
+        if (ok) {
+          this.lastEngine = 'netw';
+          if (!this._wToast) { this._wToast = true; toast('本机无整句语音引擎，已用逐词真人发音', '📖'); }
+          return;
+        }
+      }
+    }
+    if (!('speechSynthesis' in window)) { this.lastEngine = ''; return; }
     try {
       this.unlock();
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'en-US';
+      u.lang = S.ttsAccent === 'uk' ? 'en-GB' : 'en-US';
       if (this.voice) { try { u.voice = this.voice; } catch (e) {} }
       u.rate = opts.rate || .85;
       u.pitch = opts.pitch || .97;
@@ -538,10 +586,11 @@ const TTS = {
       if (opts.onerror) u.onerror = opts.onerror;
       speechSynthesis.speak(u);
       if (speechSynthesis.paused) speechSynthesis.resume();
-    } catch (e) {}
+      this.lastEngine = 'sys';
+    } catch (e) { this.lastEngine = ''; }
     if (this.noEn && Date.now() - this._warnT > 30000) {
       this._warnT = Date.now();
-      toast('本机缺少英文语音引擎：手机设置→文字转语音→安装 Google TTS，或配 API Key 启用在线语音', '🔌');
+      toast('System voice unavailable, please keep network voice enabled', '🔌');
     }
   },
   stop() {
@@ -1476,7 +1525,7 @@ const StoryPlayer = {
       let done = false;
       const adv = () => { if (done) return; done = true; nextChunk(); };
       TTS.speak(c, { rate: .82, force: true, onend: adv, onerror: adv });
-      setTimeout(adv, Math.min(30000, c.split(' ').length * 700 + 2500));
+      setTimeout(adv, Math.min(60000, c.split(' ').length * 1100 + 3000));
       };
       nextChunk();
     };
@@ -1624,7 +1673,11 @@ function renderMe() {
     <div class="card">
       <h3>🎙️ 语音设置</h3>
       <div class="setrow">
-        <div class="lab"><span class="ic">☁️</span><div>在线高音质语音<small>${S.ai.key ? '真人感神经网络语音 · 走已配 API Key' : '需先在「AI教练」页配置 API Key'}</small></div></div>
+        <div class="lab"><span class="ic">📶</span><div>网络词典发音<small>真人录音 · 全手机可用（含微信内）· 需联网</small></div></div>
+        <div class="switch ${S.ttsNet !== false ? 'on' : ''}" id="ttsnet-sw"></div>
+      </div>
+      <div class="setrow">
+        <div class="lab"><span class="ic">☁️</span><div>在线高音质语音<small>${S.ai.key ? '神经网络语音 · 走已配 API Key，开启后优先于网络发音' : '需先在「AI教练」页配置 API Key（OpenAI 兼容接口）'}</small></div></div>
         <div class="switch ${S.ttsCloud ? 'on' : ''}" id="ttscloud-sw"></div>
       </div>
       <div class="setrow">
@@ -1632,10 +1685,14 @@ function renderMe() {
         <div class="seg" id="voice-seg">${[['nova','Nova'],['shimmer','Shimmer'],['echo','Echo'],['onyx','Onyx']].map(([v, l]) => `<button class="${(S.ttsVoice || 'nova') === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div>
       </div>
       <div class="setrow">
-        <div class="lab"><span class="ic">▶️</span><div>试听语音<small id="tts-diag">检测中…</small></div></div>
+        <div class="lab"><span class="ic">🌍</span><div>发音口音<small>美音 type=US · 英音 type=UK，雅思两种都考</small></div></div>
+        <div class="seg" id="accent-seg">${[['us','美音'],['uk','英音']].map(([v, l]) => `<button class="${(S.ttsAccent || 'us') === v ? 'on' : ''}" data-a="${v}">${l}</button>`).join('')}</div>
+      </div>
+      <div class="setrow">
+        <div class="lab"><span class="ic">▶️</span><div>试听语音<small id="tts-diag">点击播放，会显示实际使用的引擎</small></div></div>
         <button class="btn btn-soft btn-sm" id="tts-test">播放</button>
       </div>
-      <div class="muted" style="line-height:1.8;margin-top:6px">在线语音不支持时自动回退系统语音。词卡自动朗读与故事朗读都会使用当前选择的语音。</div>
+      <div class="muted" style="line-height:1.8;margin-top:6px">优先级：在线高音质 → 网络词典发音 → 系统语音。单词用词典真人录音；整句朗读时若本机无语音引擎（常见于 OPPO/vivo），自动降级为逐词真人发音。没声音请检查手机「媒体音量」：播放时长按音量+键。</div>
     </div>
 
     <div class="card">
@@ -1672,7 +1729,7 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        IELTS Coach v2.3 · 雅思教练台<br>
+        IELTS Coach v2.4 · 雅思教练台<br>
         词库：四级完整大纲 ${CET4_WORDS.length} 词（含真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
         数据双重保存在本机（localStorage + IndexedDB 自动互备），不上传任何服务器。
       </div>
@@ -1689,26 +1746,31 @@ function renderMe() {
   });
   $('#sound-sw').addEventListener('click', e => { S.sound = !S.sound; save(); e.target.classList.toggle('on', S.sound); });
   $('#sfx-sw').addEventListener('click', e => { S.sfx = !S.sfx; save(); e.target.classList.toggle('on', S.sfx); if (S.sfx) AudioFX.play('yes'); });
+  $('#ttsnet-sw').addEventListener('click', () => {
+    S.ttsNet = S.ttsNet === false; save(); renderMe();
+    toast(S.ttsNet !== false ? '网络词典发音已开启' : '网络词典发音已关闭', '📶');
+  });
   $('#ttscloud-sw').addEventListener('click', () => {
     if (!S.ai.key && !S.ttsCloud) return toast('请先在「AI教练」页配置 API Key（OpenAI 接口支持语音）', '💡');
     S.ttsCloud = !S.ttsCloud; save(); renderMe();
-    if (S.ttsCloud) toast('已开启在线高音质语音', '☁️');
+    if (S.ttsCloud) toast('已开启在线高音质语音（优先于网络发音）', '☁️');
   });
   $('#voice-seg').addEventListener('click', e => {
     const b = e.target.closest('[data-v]'); if (!b) return;
     S.ttsVoice = b.dataset.v; TTS._cache.clear(); save(); renderMe();
   });
-  $('#tts-test').addEventListener('click', () => {
-    speak('Hello! I am your English coach. Let us practice together.');
+  $('#accent-seg').addEventListener('click', e => {
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    S.ttsAccent = b.dataset.a; save(); renderMe();
+    speak(b.dataset.a === 'uk' ? 'British accent' : 'American accent');
   });
-  const setDiag = () => {
-    const el = $('#tts-diag'); if (!el) return;
-    const en = (TTS.voices || []).filter(v => (v.lang || '').toLowerCase().startsWith('en'));
-    el.textContent = en.length
-      ? '本机英文语音 ' + en.length + ' 个' + (TTS.voice ? ' · 当前：' + TTS.voice.name : '')
-      : '⚠️ 本机无英文语音引擎，建议开启在线语音';
-  };
-  setDiag(); setTimeout(setDiag, 1200);
+  $('#tts-test').addEventListener('click', async () => {
+    const eng = await TTS.speak('Hello! I am your English coach. Let us practice together.', { force: true });
+    const label = { cloud: '在线高音质语音', net: '网络词典发音', netw: '网络逐词发音', sys: '系统语音', '': '无可用语音' }[eng || TTS.lastEngine] || '未知';
+    const diag = $('#tts-diag');
+    if (diag) diag.textContent = '上次播放引擎：' + label;
+    toast('实际使用：' + label, '▶️');
+  });
 
   $('#bk-gen').addEventListener('click', async () => {
     const modal = $('#modal'), mask = $('#modalMask');

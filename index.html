@@ -236,6 +236,8 @@ html[data-trans=down] .page{animation:transD .3s cubic-bezier(.25,.8,.3,1)}
 .story-cover .desc{font-size:.78rem;color:var(--tx2);margin:6px 0 10px}
 .reader{background:var(--card);border-radius:18px;padding:22px 18px;box-shadow:var(--shadow)}
 .reader p{font-size:1rem;line-height:2;margin-bottom:14px}
+.reader p.reading{background:var(--pri-soft);border-radius:12px;padding:2px 8px;margin:0 -8px 14px;box-shadow:inset 0 0 0 1.5px var(--pri-line);transition:background .3s}
+#st-listen{font-size:1.15rem}
 .reader .w{padding:0 1px;border-bottom:1.5px dotted var(--tx3)}
 .reader .choice{margin:14px 0;display:flex;flex-direction:column;gap:10px}
 .reader .choice button{background:var(--pri-soft);color:var(--pri);border-radius:14px;padding:13px 16px;font-size:.88rem;font-weight:600;text-align:left;line-height:1.5}
@@ -433,10 +435,54 @@ function toast(msg, icon) {
   $('#toast').appendChild(t);
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 320); }, 2400);
 }
-function speak(text) {
-  if (!S.sound) return;
-  try { const u = new SpeechSynthesisUtterance(text); u.lang = 'en-US'; u.rate = .85; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {}
-}
+/* ---------- TTS 引擎：兼容 iOS/安卓/微信 ---------- */
+const TTS = {
+  voice: null, unlocked: false,
+  init() {
+    const pick = () => {
+      try {
+        const vs = speechSynthesis.getVoices();
+        if (!vs.length) return;
+        this.voice = vs.find(v => /^en([-_](US|GB))?$/i.test(v.lang || '') && /google|natural|premium|enhanced/i.test(v.name))
+          || vs.find(v => /^en[-_]US/i.test(v.lang || ''))
+          || vs.find(v => /^en/i.test(v.lang || ''))
+          || null;
+      } catch (e) {}
+    };
+    pick();
+    try { speechSynthesis.onvoiceschanged = pick; } catch (e) {}
+  },
+  unlock() {
+    if (this.unlocked) return;
+    try {
+      const u = new SpeechSynthesisUtterance(' ');
+      u.volume = 0;
+      u.lang = 'en-US';
+      speechSynthesis.speak(u);
+      this.unlocked = true;
+    } catch (e) { this.unlocked = true; }
+  },
+  speak(text, opts = {}) {
+    if (!S.sound && !opts.force) return;
+    if (!('speechSynthesis' in window)) return;
+    try {
+      this.unlock();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'en-US';
+      if (this.voice) { try { u.voice = this.voice; } catch (e) {} }
+      u.rate = opts.rate || .85;
+      if (opts.onend) u.onend = opts.onend;
+      if (opts.onerror) u.onerror = opts.onerror;
+      speechSynthesis.speak(u);
+      if (speechSynthesis.paused) speechSynthesis.resume();
+    } catch (e) {}
+  },
+  stop() { try { speechSynthesis.cancel(); } catch (e) {} }
+};
+TTS.init();
+['pointerdown', 'touchstart'].forEach(ev =>
+  window.addEventListener(ev, () => TTS.unlock(), { once: true, passive: true, capture: true }));
+function speak(text) { TTS.stop(); TTS.speak(text); }
 function copyText(text, tip) {
   const done = () => toast(tip || '已复制到剪贴板', '📋');
   if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
@@ -560,6 +606,7 @@ let lastRoute = '';
 function render() {
   ensureDay();
   closeSheet(); $('#modalMask').classList.remove('show');
+  if (StoryPlayer.on) StoryPlayer.stop();
   const route = (location.hash.replace('#','') || 'home');
   const cur = route.split('/')[0];
   if (cur !== lastRoute) {
@@ -1309,7 +1356,70 @@ function wrapWords(text) {
   ).join('');
 }
 
+/* ---------- 故事朗读器 ---------- */
+const StoryPlayer = {
+  on: false, seq: 0,
+  btnLabel(on) { const b = $('#st-listen'); if (b) { b.textContent = on ? '⏹' : '🔊'; b.title = on ? '停止朗读' : '听英文朗读'; } },
+  toggle() { this.on ? this.stop() : this.start(); },
+  chunks(text) {
+    const out = [];
+    const sents = text.replace(/\s+/g, ' ').match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g) || [text];
+    sents.forEach(s => {
+      s = s.trim(); if (!s) return;
+      if (s.length <= 150) { out.push(s); return; }
+      let cur = '';
+      s.replace(/([,;:—]) /g, '$1\n').split('\n').forEach(seg => {
+        if ((cur + ' ' + seg).trim().length > 140 && cur) { out.push(cur.trim()); cur = seg; }
+        else cur = (cur + ' ' + seg).trim();
+      });
+      if (cur) out.push(cur.trim());
+    });
+    return out;
+  },
+  start() {
+    const box = $('#reader');
+    if (!box) return;
+    const paras = Array.from(box.querySelectorAll('p')).filter(p => p.textContent.trim());
+    if (!paras.length) { toast('先点「继续」显示正文，再听朗读', '🎧'); return; }
+    TTS.stop();
+    this.on = true; this.seq++;
+    const my = this.seq;
+    this.btnLabel(true);
+    AudioFX.play('tap');
+    let pi = 0;
+    const speakPara = () => {
+      if (my !== this.seq) return;
+      if (pi >= paras.length) return this.stop();
+      const p = paras[pi];
+      box.querySelectorAll('p.reading').forEach(x => x.classList.remove('reading'));
+      p.classList.add('reading');
+      try { p.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+      const chunks = this.chunks(p.textContent.trim());
+      let ci = 0;
+      const nextChunk = () => {
+        if (my !== this.seq) return;
+        if (ci >= chunks.length) { pi++; return speakPara(); }
+        const c = chunks[ci++];
+        let done = false;
+        const adv = () => { if (done) return; done = true; nextChunk(); };
+        TTS.speak(c, { rate: .82, force: true, onend: adv, onerror: adv });
+        setTimeout(adv, Math.min(30000, c.split(' ').length * 700 + 2500));
+      };
+      nextChunk();
+    };
+    speakPara();
+  },
+  stop(silent) {
+    this.seq++;
+    this.on = false;
+    TTS.stop();
+    this.btnLabel(false);
+    document.querySelectorAll('p.reading').forEach(x => x.classList.remove('reading'));
+  }
+};
+
 function openStory(id) {
+  StoryPlayer.stop();
   const story = STORIES.find(s => s.id === id);
   if (!story) return nav('#story');
   const reader = { story, idx: 0, chosen: false, earned: 0 };
@@ -1320,11 +1430,12 @@ function openStory(id) {
     <div class="sess-top">
       <button class="x" id="st-back">←</button>
       <div class="muted">${story.icon} ${esc(story.title)}</div>
-      <div class="x" style="visibility:hidden">←</div>
+      <button class="x" id="st-listen" title="听英文朗读">🔊</button>
     </div>
     <div class="reader" id="reader"></div>
   </div>`;
-  $('#st-back').addEventListener('click', () => nav('#story'));
+  $('#st-back').addEventListener('click', () => { StoryPlayer.stop(); nav('#story'); });
+  $('#st-listen').addEventListener('click', () => StoryPlayer.toggle());
 
   const box = $('#reader');
   function revealNext() {
@@ -1471,7 +1582,7 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        IELTS Coach v2.1 · 雅思教练台<br>
+        IELTS Coach v2.2 · 雅思教练台<br>
         词库：四级完整大纲 ${CET4_WORDS.length} 词（含真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
         数据双重保存在本机（localStorage + IndexedDB 自动互备），不上传任何服务器。
       </div>

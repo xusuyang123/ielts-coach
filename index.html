@@ -343,14 +343,63 @@ const DEFAULT_S = {
   daily: { date: '', n: 0, q: 0, r: 0, story: false },
   hist: {},
   goal: 20, sound: true, sfx: true, theme: 'auto', book: 'cet4',
-  exp: 0, lastTab: 'home', lastBackup: 0, schemaV: 2,
+  exp: 0, lastTab: 'home', lastBackup: 0, schemaV: 2, hintWX: false, hintHome: false,
   ai: { key: '', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
 };
 let S;
 try { S = Object.assign({}, DEFAULT_S, JSON.parse(localStorage.getItem(LS_KEY) || '{}')); }
 catch (e) { S = JSON.parse(JSON.stringify(DEFAULT_S)); }
 
-function save() { localStorage.setItem(LS_KEY, JSON.stringify(S)); }
+function save() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch (e) {}
+  clearTimeout(save._t);
+  save._t = setTimeout(mirrorIdb, 1500);
+}
+
+/* ---------- IndexedDB 备用存储：双写互备，一边被清自动恢复 ---------- */
+function idbOp(mode, fn) {
+  return new Promise(resolve => {
+    try {
+      const req = indexedDB.open('ieltsCoachDB', 1);
+      req.onupgradeneeded = () => { try { req.result.createObjectStore('kv'); } catch (e) {} };
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        try {
+          const tx = req.result.transaction('kv', mode);
+          const out = fn(tx.objectStore('kv'));
+          tx.oncomplete = () => resolve(out && 'result' in out ? out.result : true);
+          tx.onerror = () => resolve(null);
+        } catch (e) { resolve(null); }
+      };
+    } catch (e) { resolve(null); }
+  });
+}
+let _noMirror = false;
+const mirrorIdb = () => { if (!_noMirror) idbOp('readwrite', st => st.put(S, 'state')); };
+const idbGetState = () => idbOp('readonly', st => st.get('state'));
+const idbDelState = () => { idbOp('readwrite', st => st.delete('state')); };
+let _recovered = 0;
+async function storageRecover() {
+  const idb = await idbGetState();
+  if (!idb || typeof idb !== 'object' || !idb.voc) return;
+  let ls = null;
+  try { ls = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) {}
+  const p = s => Object.keys(s.voc || {}).length + (s.exp || 0) + ((s.streak && s.streak.total) || 0) * 5;
+  if (!ls || p(idb) > p(ls)) {
+    S = Object.assign(JSON.parse(JSON.stringify(DEFAULT_S)), idb);
+    _recovered = Object.keys(idb.voc).length;
+    save();
+  }
+}
+async function requestPersist() {
+  try {
+    if (navigator.storage && navigator.storage.persisted) {
+      if (!(await navigator.storage.persisted()) && navigator.storage.persist) await navigator.storage.persist();
+    }
+  } catch (e) {}
+}
+window.addEventListener('pagehide', mirrorIdb);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') mirrorIdb(); });
 function todayStr() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
 function ensureDay() {
   const t = todayStr();
@@ -552,6 +601,12 @@ function renderHome() {
   const checkedToday = S.streak.last === todayStr();
   const canCheck = (S.daily.n + S.daily.q + S.daily.r) > 0;
   const needBackup = Object.keys(S.voc).length >= 20 && (Date.now() - (S.lastBackup || 0) > 7 * 86400000);
+  const ua = navigator.userAgent || '';
+  const inWeChat = /MicroMessenger/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const standalone = (window.navigator.standalone === true) || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  const showWX = inWeChat && !S.hintWX;
+  const showHomeHint = isIOS && !inWeChat && !standalone && !S.hintHome && Object.keys(S.voc).length >= 10;
 
   const tasks = [
     { ok: n >= goal, t: `在训练营学 ${goal} 个词（${n}/${goal}）` },
@@ -567,6 +622,19 @@ function renderHome() {
       <div><h1>${greet()} 👋</h1><div class="sub">${dateCn()} · ${esc(lv.name)}</div></div>
       <div class="avatar">${lv.name[0]}</div>
     </div>
+
+    ${showWX ? `
+    <div class="card" style="border:1.5px dashed var(--red);background:var(--red-soft)">
+      <h3>⚠️ 微信内打开，进度可能不保留</h3>
+      <div class="muted" style="line-height:1.8;margin-bottom:10px">微信清理缓存时可能清空学习记录。请点右上角「···」→「在浏览器打开」，用系统浏览器或添加到主屏幕使用。</div>
+      <button class="btn btn-soft btn-block" id="wx-ok" style="background:var(--card)">知道了</button>
+    </div>` : ''}
+    ${showHomeHint ? `
+    <div class="card" style="border:1.5px dashed var(--pri);background:var(--pri-soft)">
+      <h3>📲 建议添加到主屏幕</h3>
+      <div class="muted" style="line-height:1.8;margin-bottom:10px">Safari 分享按钮 →「添加到主屏幕」即可全屏使用；苹果系统不会自动清理主屏幕应用的数据，学习进度更稳固。</div>
+      <button class="btn btn-soft btn-block" id="home-ok" style="background:var(--card)">知道了</button>
+    </div>` : ''}
 
     <div class="hero">
       <div class="row">
@@ -624,6 +692,9 @@ function renderHome() {
 
   app.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => nav(b.dataset.go)));
   $('#checkin').addEventListener('click', doCheckIn);
+  const wxBtn = $('#wx-ok'), homeBtn = $('#home-ok');
+  if (wxBtn) wxBtn.addEventListener('click', () => { S.hintWX = true; save(); renderHome(); });
+  if (homeBtn) homeBtn.addEventListener('click', () => { S.hintHome = true; save(); renderHome(); });
 }
 
 function doCheckIn() {
@@ -1400,9 +1471,9 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        IELTS Coach v2.0 · 雅思教练台<br>
+        IELTS Coach v2.1 · 雅思教练台<br>
         词库：四级完整大纲 ${CET4_WORDS.length} 词（含真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
-        所有数据仅保存在本机浏览器 localStorage，不上传任何服务器。
+        数据双重保存在本机（localStorage + IndexedDB 自动互备），不上传任何服务器。
       </div>
     </div>
   </div>`;
@@ -1494,8 +1565,11 @@ function renderMe() {
   });
   $('#rst-btn').addEventListener('click', () => {
     if (!confirm('确定清空全部学习数据？此操作不可恢复。')) return;
-    localStorage.removeItem(LS_KEY);
-    location.reload();
+    clearTimeout(save._t);
+    _noMirror = true;
+    try { localStorage.removeItem(LS_KEY); } catch (e) {}
+    idbDelState();
+    setTimeout(() => location.reload(), 300);
   });
 }
 
@@ -1513,12 +1587,17 @@ $('#tabbar').addEventListener('click', e => {
   if (t) { AudioFX.play('tap'); buzz(8); nav('#' + t.dataset.t); }
 });
 $('#sheet').addEventListener('click', e => { if (e.target.classList.contains('grab')) closeSheet(); });
-ensureDay();
-if (!location.hash && S.lastTab && S.lastTab !== 'home' && TAB_ORDER.includes(S.lastTab)) {
-  location.hash = '#' + S.lastTab;
-} else {
-  render();
-}
+(async function boot() {
+  await storageRecover();
+  ensureDay();
+  requestPersist();
+  if (!location.hash && S.lastTab && S.lastTab !== 'home' && TAB_ORDER.includes(S.lastTab)) {
+    location.hash = '#' + S.lastTab;
+  } else {
+    render();
+  }
+  if (_recovered > 0) toast(`检测到主存储丢失，已自动恢复 ${_recovered} 词进度`, '♻️');
+})();
 
 </script>
 </body>

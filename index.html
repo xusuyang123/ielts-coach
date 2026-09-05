@@ -237,7 +237,11 @@ html[data-trans=down] .page{animation:transD .3s cubic-bezier(.25,.8,.3,1)}
 .reader{background:var(--card);border-radius:18px;padding:22px 18px;box-shadow:var(--shadow)}
 .reader p{font-size:1rem;line-height:2;margin-bottom:14px}
 .reader p.reading{background:var(--pri-soft);border-radius:12px;padding:2px 8px;margin:0 -8px 14px;box-shadow:inset 0 0 0 1.5px var(--pri-line);transition:background .3s}
+.zhsub{font-size:.85rem;line-height:1.8;margin:-6px 0 14px;padding:2px 0 2px 10px;border-left:2.5px solid var(--pri-line);animation:fadeIn .35s}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
 #st-listen{font-size:1.15rem}
+#st-zh{font-size:.9rem;font-weight:600}
+#st-zh.on{color:var(--pri);box-shadow:inset 0 0 0 1.5px var(--pri-line);background:var(--pri-soft)}
 .reader .w{padding:0 1px;border-bottom:1.5px dotted var(--tx3)}
 .reader .choice{margin:14px 0;display:flex;flex-direction:column;gap:10px}
 .reader .choice button{background:var(--pri-soft);color:var(--pri);border-radius:14px;padding:13px 16px;font-size:.88rem;font-weight:600;text-align:left;line-height:1.5}
@@ -507,7 +511,7 @@ const TTS = {
     }
     return null;
   },
-  netAudio: null, lastEngine: '', _wToast: false,
+  netAudio: null, lastEngine: '', _wToast: false, isAndroid: /android/i.test(navigator.userAgent),
   playNet(text, opts) {
     return new Promise(resolve => {
       try {
@@ -565,7 +569,7 @@ const TTS = {
     const multi = /\s/.test(String(text).trim());
     if (S.ttsNet !== false) {
       if (await this.playNet(text, opts)) { this.lastEngine = 'net'; return; }
-      if (multi && this.noEn) {
+      if (multi && (this.noEn || this.isAndroid)) {
         const ok = await this.playNetWords(text, opts);
         if (ok) {
           this.lastEngine = 'netw';
@@ -1389,58 +1393,58 @@ async function aiCall(prompt) {
 /* ================= STORY ================= */
 const STORIES = [
   { id: 'stone', icon: '🐒', title: 'The Stone Monkey', cn: '石猴觉醒', tag: '奇幻冒险 · 灵感来自《西游记》', level: '入门 · 约450词', paras: [
-    { t: 'Long, long ago, on a mountain by the eastern sea, there stood a magic stone. Every day it drank the morning light and swallowed the soft light of the moon.' },
-    { t: 'One morning, the stone cracked with a loud noise. From inside jumped a small monkey made of golden light. He opened his eyes, and two beams of golden fire shot up into the sky.' },
-    { t: 'The other animals on the mountain were amazed. "A stone that gives birth to a monkey!" they whispered. "He must be special."' },
-    { t: 'The stone monkey was brave and quick. He learned to climb the highest trees and jump across the widest rivers. Soon, every animal on the mountain knew his name.' },
-    { t: 'One hot summer day, the animals were playing by a waterfall. "Behind this water," said an old monkey, "there is a secret cave. But nobody is brave enough to go through."' },
-    { t: 'The stone monkey laughed. "I will go!" He closed his eyes and jumped through the falling water.' },
-    { t: 'Inside, he found a shining palace with beds of stone and cups of jade. Words on the wall said: "The lucky one who enters this cave shall be king."' },
-    { t: 'The stone monkey ran back out. "Come in! Come in!" he shouted. "It is a perfect home for all of us!" The animals followed him inside and cheered.' },
+    { t: 'Long, long ago, on a mountain by the eastern sea, there stood a magic stone. Every day it drank the morning light and swallowed the soft light of the moon.', zh: '很久很久以前，东海岸边的一座山上，立着一块仙石。它每天吸收晨光，吞吐柔和的月华。' },
+    { t: 'One morning, the stone cracked with a loud noise. From inside jumped a small monkey made of golden light. He opened his eyes, and two beams of golden fire shot up into the sky.', zh: '一天清晨，仙石轰然裂开，里面蹦出一只金光闪闪的小猴子。他睁开双眼，两道金光直冲云霄。' },
+    { t: 'The other animals on the mountain were amazed. "A stone that gives birth to a monkey!" they whispered. "He must be special."', zh: '山上的动物们都惊呆了。"石头里竟然生出一只猴子！"他们窃窃私语，"他一定不平凡。"' },
+    { t: 'The stone monkey was brave and quick. He learned to climb the highest trees and jump across the widest rivers. Soon, every animal on the mountain knew his name.', zh: '石猴勇敢机敏，学会了攀上最高的树、跃过最宽的河。很快，山上的动物都知道了他的名字。' },
+    { t: 'One hot summer day, the animals were playing by a waterfall. "Behind this water," said an old monkey, "there is a secret cave. But nobody is brave enough to go through."', zh: '一个炎热的夏日，动物们在瀑布边玩耍。"这水帘后面，"一只老猴说，"有个秘密洞穴，但谁也没胆量穿过去。"' },
+    { t: 'The stone monkey laughed. "I will go!" He closed his eyes and jumped through the falling water.', zh: '石猴大笑着："我去！"他闭上眼睛，一头扎进了水帘。' },
+    { t: 'Inside, he found a shining palace with beds of stone and cups of jade. Words on the wall said: "The lucky one who enters this cave shall be king."', zh: '洞里竟是一座闪亮的宫殿，有石床和玉杯。墙上刻着一行字："有缘进入此洞者，可为王。"' },
+    { t: 'The stone monkey ran back out. "Come in! Come in!" he shouted. "It is a perfect home for all of us!" The animals followed him inside and cheered.', zh: '石猴跑出来大喊："快进来！快进来！这里是我们完美的家！"动物们跟着涌进洞里，欢呼雀跃。' },
     { c: [
       { l: '👑 接受王位，成为「美猴王」', tail: [
-        { t: 'He called himself the Monkey King. For many years he played and feasted with his friends, and every animal obeyed him.' },
-        { t: 'But sometimes, at night, a small worry grew in his heart: "One day, we will all grow old and die. Is there a way to live forever?" That question would change everything. (To be continued...)' } ] },
+        { t: 'He called himself the Monkey King. For many years he played and feasted with his friends, and every animal obeyed him.', zh: '他自封"美猴王"。此后许多年，他与众猴玩乐宴饮，百兽无不听命。' },
+        { t: 'But sometimes, at night, a small worry grew in his heart: "One day, we will all grow old and die. Is there a way to live forever?" That question would change everything. (To be continued...)', zh: '可有时深夜，他心中会生出一丝忧虑："总有一天我们都会老去、死去，有没有办法长生不老呢？"这个问题，将改变一切。（未完待续……）' } ] },
       { l: '🕯️ 放下荣耀，去远方寻找智慧', tail: [
-        { t: '"A title is just a name," he said quietly. "I want something more — I want to understand the world."' },
-        { t: 'He left the mountain with a small bag and a long stick, and walked toward the sunrise, where the wise masters were said to live. (To be continued...)' } ] },
+        { t: '"A title is just a name," he said quietly. "I want something more — I want to understand the world."', zh: '"名号不过是个称呼，"他轻声说，"我想要更多——我想弄明白这个世界。"' },
+        { t: 'He left the mountain with a small bag and a long stick, and walked toward the sunrise, where the wise masters were said to live. (To be continued...)', zh: '他背起小包、提着长棍下了山，朝着日出的方向走去——据说智者们就住在那里。（未完待续……）' } ] },
     ] },
   ]},
   { id: 'house', icon: '🕯️', title: 'The Whispering House', cn: '低语之宅', tag: '侦探悬疑 · 灵感来自福尔摩斯', level: '进阶 · 约500词', paras: [
-    { t: 'The letter arrived on a wet Tuesday, with no name on the envelope. Inside was a single line: "The house on Lime Street remembers you."' },
-    { t: 'Detective Sarah Chen read it twice. She did not know any house on Lime Street. But that night, she dreamed of a red door and a voice calling her name.' },
-    { t: 'Three days later, she stood in front of number nine. The paint was falling off like dry leaves. All the windows were dark, except one on the top floor.' },
-    { t: 'An old neighbour saw her and crossed the street quickly. "You should not be here," the woman said. "Every night at midnight, that house whispers. Nobody stays to listen."' },
-    { t: 'Sarah checked her watch. 11:45 pm. "Then I will listen," she said.' },
-    { t: 'The red door was not locked. Inside, the air smelled of dust and old paper. Moonlight came through a hole in the roof, painting a silver circle on the floor.' },
-    { t: 'At midnight, the whispering began. It came from the walls, soft and cold, like wind through a keyhole. Sarah took out her notebook and wrote down every word she could catch.' },
-    { t: '"Cold... third stair... under... key..." The whisper stopped. Then it started again, clearer this time, almost human.' },
-    { t: 'Sarah walked to the stairs. The third one made a hollow sound when she stepped on it. She pulled out her small torch and looked underneath.' },
+    { t: 'The letter arrived on a wet Tuesday, with no name on the envelope. Inside was a single line: "The house on Lime Street remembers you."', zh: '那封信在一个潮湿的周二送到，信封上没有署名。里面只有一行字："莱姆街的那栋房子，还记得你。"' },
+    { t: 'Detective Sarah Chen read it twice. She did not know any house on Lime Street. But that night, she dreamed of a red door and a voice calling her name.', zh: '侦探陈莎拉把信读了两遍。她并不认识莱姆街的任何房子。可当晚，她梦到了一扇红门，和一个呼唤她名字的声音。' },
+    { t: 'Three days later, she stood in front of number nine. The paint was falling off like dry leaves. All the windows were dark, except one on the top floor.', zh: '三天后，她站在了九号楼前。墙皮像枯叶一样剥落，所有窗户都黑着——除了顶楼那一扇。' },
+    { t: 'An old neighbour saw her and crossed the street quickly. "You should not be here," the woman said. "Every night at midnight, that house whispers. Nobody stays to listen."', zh: '一位老邻居看见她，赶忙穿过马路躲开。"你不该来这儿，"老妇人说，"每天午夜，那栋房子都会低语。没人敢留下来听。"' },
+    { t: 'Sarah checked her watch. 11:45 pm. "Then I will listen," she said.', zh: '莎拉看了看表：23点45分。"那我就来听听。"她说。' },
+    { t: 'The red door was not locked. Inside, the air smelled of dust and old paper. Moonlight came through a hole in the roof, painting a silver circle on the floor.', zh: '红门没有上锁。屋内弥漫着灰尘和旧纸的气味。月光从屋顶的破洞洒下，在地板上画出一个银色的圆。' },
+    { t: 'At midnight, the whispering began. It came from the walls, soft and cold, like wind through a keyhole. Sarah took out her notebook and wrote down every word she could catch.', zh: '午夜时分，低语开始了。它来自墙壁，轻柔而冰冷，像风穿过锁孔。莎拉掏出笔记本，记下捕捉到的每一个词。' },
+    { t: '"Cold... third stair... under... key..." The whisper stopped. Then it started again, clearer this time, almost human.', zh: '"冷……第三级楼梯……下面……钥匙……"低语停了。接着又响起，这次更清晰，几乎像人声。' },
+    { t: 'Sarah walked to the stairs. The third one made a hollow sound when she stepped on it. She pulled out her small torch and looked underneath.', zh: '莎拉走向楼梯。踩上第三级时，下面发出空洞的声响。她掏出小手电，照向梯级下面。' },
     { c: [
       { l: '📦 撬开盒子，一探究竟', tail: [
-        { t: 'Inside the box was a photograph of a little girl — and on the back, in pencil: "Sarah, forgive me." Her hands began to shake.' },
-        { t: 'The house did remember her. Some doors, once opened, can never be closed again. (To be continued...)' } ] },
+        { t: 'Inside the box was a photograph of a little girl — and on the back, in pencil: "Sarah, forgive me." Her hands began to shake.', zh: '盒子里是一张小女孩的照片——背面用铅笔写着："莎拉，原谅我。"她的手开始颤抖。' },
+        { t: 'The house did remember her. Some doors, once opened, can never be closed again. (To be continued...)', zh: '这栋房子，真的记得她。有些门一旦打开，就再也关不上了。（未完待续……）' } ] },
       { l: '📷 先拍照取证，保持现场完整', tail: [
-        { t: 'She photographed the box from every angle. In the last photo, she noticed something strange: fresh fingerprints in the dust, too small to be hers.' },
-        { t: 'Someone had been here — very recently. The case was no longer about a whispering house. It was about a person who wanted her to find it. (To be continued...)' } ] },
+        { t: 'She photographed the box from every angle. In the last photo, she noticed something strange: fresh fingerprints in the dust, too small to be hers.', zh: '她从各个角度给盒子拍照。在最后一张照片里，她注意到异样：灰尘中有新鲜的指纹，小得不可能是她自己的。' },
+        { t: 'Someone had been here — very recently. The case was no longer about a whispering house. It was about a person who wanted her to find it. (To be continued...)', zh: '有人来过——就在不久前。这案子不再是关于一栋会低语的房子，而是关于一个故意想让她找到它的人。（未完待续……）' } ] },
     ] },
   ]},
   { id: 'compass', icon: '🧭', title: 'The Boy and the Compass', cn: '少年与罗盘', tag: '个人成长 · 灵感来自《牧羊少年》', level: '易读 · 约420词', paras: [
-    { t: 'Mateo was a shepherd boy. Every day he took his sheep to the hills and watched them eat the green grass, hour after hour, year after year.' },
-    { t: 'One night, he had the same dream for the seventh time. In the dream, a voice said: "Go to the old tower. There you will find something that will change your life."' },
-    { t: 'Mateo did not like adventures. He liked his sheep, his warm bed, and his mother\'s soup. But the dream came back, again and again, like a stone in his shoe.' },
-    { t: 'So one morning, he climbed the hill to the old tower. Inside, on a broken table, lay a golden compass. But the needle did not point north — it pointed south, toward the sea.' },
-    { t: 'When he touched it, the needle turned like a living thing and pointed straight at his heart. Mateo laughed nervously and put the compass in his pocket.' },
-    { t: 'That evening, a caravan of traders stopped in the village. They were going south, across the desert, to a city of gold and glass. One of them, an old man with kind eyes, looked at Mateo for a long time.' },
-    { t: '"You have something in your pocket," the old man said. "I can feel it. The desert is calling you, boy. Will you answer?"' },
-    { t: 'Mateo looked back at his village. He saw his mother\'s small house, the sheep sleeping in their pen, and the hills he knew like his own hands. Then he felt the compass, warm against his leg, pointing south.' },
+    { t: 'Mateo was a shepherd boy. Every day he took his sheep to the hills and watched them eat the green grass, hour after hour, year after year.', zh: '马特奥是个牧羊少年。他每天赶着羊群上山，看它们吃草，日复一日，年复一年。' },
+    { t: 'One night, he had the same dream for the seventh time. In the dream, a voice said: "Go to the old tower. There you will find something that will change your life."', zh: '一天夜里，他第七次做了同一个梦。梦里有个声音说："去那座古塔，你会找到改变你一生的东西。"' },
+    { t: 'Mateo did not like adventures. He liked his sheep, his warm bed, and his mother\'s soup. But the dream came back, again and again, like a stone in his shoe.', zh: '马特奥不喜欢冒险。他喜欢他的羊、温暖的床，还有妈妈煮的汤。可这个梦一再回来，像鞋里的一粒石子。' },
+    { t: 'So one morning, he climbed the hill to the old tower. Inside, on a broken table, lay a golden compass. But the needle did not point north — it pointed south, toward the sea.', zh: '于是一天清晨，他爬上山坡走进古塔。里面一张破桌上，躺着一只金色罗盘。可指针不指北——它指向南，朝着大海的方向。' },
+    { t: 'When he touched it, the needle turned like a living thing and pointed straight at his heart. Mateo laughed nervously and put the compass in his pocket.', zh: '他一碰，指针竟像活物般转动，直直指向他的心口。马特奥紧张地笑了笑，把罗盘塞进口袋。' },
+    { t: 'That evening, a caravan of traders stopped in the village. They were going south, across the desert, to a city of gold and glass. One of them, an old man with kind eyes, looked at Mateo for a long time.', zh: '当天傍晚，一支商队停在村口。他们要南下穿越沙漠，去一座黄金与玻璃之城。其中一位眼神和善的老人，久久地打量着马特奥。' },
+    { t: '"You have something in your pocket," the old man said. "I can feel it. The desert is calling you, boy. Will you answer?"', zh: '"你口袋里有样东西，"老人说，"我感觉得到。沙漠在呼唤你，孩子。你愿意回应吗？"' },
+    { t: 'Mateo looked back at his village. He saw his mother\'s small house, the sheep sleeping in their pen, and the hills he knew like his own hands. Then he felt the compass, warm against his leg, pointing south.', zh: '马特奥回头望向村庄：母亲的小屋、围栏里熟睡的羊群、还有熟悉如自己掌纹的群山。这时他感到口袋里的罗盘微微发烫，直指南方。' },
     { c: [
       { l: '🌅 告别母亲，跟随商队出发', tail: [
-        { t: 'Mateo hugged his mother for a long time. "The world is bigger than our hills," he said.' },
-        { t: 'The caravan moved slowly south, and Mateo walked with the traders, his heart beating like a drum. The desert was hard, but every step felt right. Somewhere far away, his dream was waiting. (To be continued...)' } ] },
+        { t: 'Mateo hugged his mother for a long time. "The world is bigger than our hills," he said.', zh: '马特奥久久地拥抱了母亲。"世界比我们的群山更大。"他说。' },
+        { t: 'The caravan moved slowly south, and Mateo walked with the traders, his heart beating like a drum. The desert was hard, but every step felt right. Somewhere far away, his dream was waiting. (To be continued...)', zh: '商队缓缓南行，马特奥与商人们同行，心跳如鼓。沙漠艰苦，可每一步都走得踏实。在遥远的某处，他的梦正在等待。（未完待续……）' } ] },
       { l: '🐑 再留一年，安顿好一切再走', tail: [
-        { t: '"I will come," Mateo promised, "but not yet. My sheep need me, and my mother is not strong." The old man smiled. "A heart that takes care of others is ready for any desert. We will return in spring."' },
-        { t: 'And Mateo spent the winter preparing — saving money, training his dog, learning the maps. Some dreams are worth waiting for. (To be continued...)' } ] },
+        { t: '"I will come," Mateo promised, "but not yet. My sheep need me, and my mother is not strong." The old man smiled. "A heart that takes care of others is ready for any desert. We will return in spring."', zh: '"我会去的，"马特奥承诺，"但不是现在。我的羊需要我，母亲身体也不好。"老人笑了："懂得照顾别人的心，早已准备好穿越任何沙漠。我们春天再来。"' },
+        { t: 'And Mateo spent the winter preparing — saving money, training his dog, learning the maps. Some dreams are worth waiting for. (To be continued...)', zh: '整个冬天，马特奥都在做准备——攒钱、训狗、研究地图。有些梦想，值得等待。（未完待续……）' } ] },
     ] },
   ]},
 ];
@@ -1501,7 +1505,7 @@ const StoryPlayer = {
   start() {
     const box = $('#reader');
     if (!box) return;
-    const paras = Array.from(box.querySelectorAll('p')).filter(p => p.textContent.trim());
+    const paras = Array.from(box.querySelectorAll('p.en')).filter(p => p.textContent.trim());
     if (!paras.length) { toast('先点「继续」显示正文，再听朗读', '🎧'); return; }
     TTS.stop();
     this.on = true; this.seq++;
@@ -1552,12 +1556,29 @@ function openStory(id) {
     <div class="sess-top">
       <button class="x" id="st-back">←</button>
       <div class="muted">${story.icon} ${esc(story.title)}</div>
-      <button class="x" id="st-listen" title="听英文朗读">🔊</button>
+      <div style="display:flex;gap:8px">
+        <button class="x" id="st-zh" title="中文字幕">译</button>
+        <button class="x" id="st-listen" title="听英文朗读">🔊</button>
+      </div>
     </div>
     <div class="reader" id="reader"></div>
   </div>`;
   $('#st-back').addEventListener('click', () => { StoryPlayer.stop(); nav('#story'); });
   $('#st-listen').addEventListener('click', () => StoryPlayer.toggle());
+  $('#st-zh').addEventListener('click', () => {
+    reader.zh = !reader.zh;
+    $('#st-zh').classList.toggle('on', reader.zh);
+    AudioFX.play('tap');
+    applyZh();
+  });
+  function applyZh() {
+    box.querySelectorAll('.zhsub').forEach(x => x.remove());
+    if (!reader.zh) return;
+    box.querySelectorAll('p.en').forEach(p => {
+      const zh = p.dataset.zh; if (!zh) return;
+      p.insertAdjacentHTML('afterend', `<p class="muted zhsub">${esc(zh)}</p>`);
+    });
+  }
 
   const box = $('#reader');
   function revealNext() {
@@ -1565,7 +1586,7 @@ function openStory(id) {
     if (!node) return finish();
     reader.idx++;
     if (node.t) {
-      box.insertAdjacentHTML('beforeend', `<p>${wrapWords(node.t)}</p>`);
+      box.insertAdjacentHTML('beforeend', `<p class="en" data-zh="${esc(node.zh || '')}">${wrapWords(node.t)}</p>${reader.zh && node.zh ? `<p class="muted zhsub">${esc(node.zh)}</p>` : ''}`);
       addXP(3); reader.earned += 3;
     } else if (node.c) {
       box.insertAdjacentHTML('beforeend', `<div class="choice">${node.c.map((o, i) =>
@@ -1576,7 +1597,7 @@ function openStory(id) {
         AudioFX.play('tap'); buzz(10);
         if (!S.storyOpts[key]) { addXP(15); reader.earned += 15; S.storyOpts[key] = true; }
         b.closest('.choice').innerHTML = `<div class="tag g" style="display:inline-block">✓ ${esc(opt.l)}</div>`;
-        opt.tail.forEach(t => box.insertAdjacentHTML('beforeend', `<p>${wrapWords(t)}</p>`));
+        opt.tail.forEach(t => box.insertAdjacentHTML('beforeend', `<p class="en" data-zh="${esc(t.zh || '')}">${wrapWords(t.t)}</p>${reader.zh && t.zh ? `<p class="muted zhsub">${esc(t.zh)}</p>` : ''}`));
         save();
         finish();
       }));
@@ -1729,7 +1750,7 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        IELTS Coach v2.4 · 雅思教练台<br>
+        IELTS Coach v2.5 · 雅思教练台<br>
         词库：四级完整大纲 ${CET4_WORDS.length} 词（含真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
         数据双重保存在本机（localStorage + IndexedDB 自动互备），不上传任何服务器。
       </div>

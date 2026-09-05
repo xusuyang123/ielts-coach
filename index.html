@@ -346,6 +346,7 @@ const DEFAULT_S = {
   hist: {},
   goal: 20, sound: true, sfx: true, theme: 'auto', book: 'cet4',
   exp: 0, lastTab: 'home', lastBackup: 0, schemaV: 2, hintWX: false, hintHome: false,
+  ttsCloud: false, ttsVoice: 'nova',
   ai: { key: '', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
 };
 let S;
@@ -435,35 +436,96 @@ function toast(msg, icon) {
   $('#toast').appendChild(t);
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 320); }, 2400);
 }
-/* ---------- TTS 引擎：兼容 iOS/安卓/微信 ---------- */
+/* ---------- TTS 引擎 v2.3：系统语音 + 在线高音质双引擎 ---------- */
 const TTS = {
-  voice: null, unlocked: false,
+  voice: null, voices: [], unlocked: false, noEn: false,
+  audio: null, cloudModel: null, _cache: new Map(), _warnT: 0,
   init() {
     const pick = () => {
       try {
         const vs = speechSynthesis.getVoices();
         if (!vs.length) return;
-        this.voice = vs.find(v => /^en([-_](US|GB))?$/i.test(v.lang || '') && /google|natural|premium|enhanced/i.test(v.name))
-          || vs.find(v => /^en[-_]US/i.test(v.lang || ''))
-          || vs.find(v => /^en/i.test(v.lang || ''))
-          || null;
+        this.voices = vs;
+        const score = v => {
+          const l = (v.lang || '').toLowerCase(), n = (v.name || '').toLowerCase();
+          if (!l.startsWith('en')) return -1;
+          let s = 1;
+          if (/natural|neural/.test(n)) s += 100;
+          if (/premium|enhanced/.test(n)) s += 80;
+          if (/^google\s/.test(n)) s += /english/.test(n) ? 60 : 25;
+          if (/samantha|aria|jenny|emma|ava|brian|libby|sonia/.test(n)) s += 20;
+          if (/compact|espeak|pico|festival/.test(n)) s -= 50;
+          if (l.startsWith('en-us')) s += 12; else if (l.startsWith('en-gb')) s += 8;
+          if (v.localService === false) s += 15;
+          return s;
+        };
+        const best = vs.map(v => ({ v, s: score(v) })).filter(x => x.s >= 0).sort((a, b) => b.s - a.s);
+        this.voice = best.length ? best[0].v : null;
+        this.noEn = !best.length;
       } catch (e) {}
     };
     pick();
     try { speechSynthesis.onvoiceschanged = pick; } catch (e) {}
+    setTimeout(pick, 600); setTimeout(pick, 2500);
   },
   unlock() {
     if (this.unlocked) return;
     try {
-      const u = new SpeechSynthesisUtterance(' ');
-      u.volume = 0;
-      u.lang = 'en-US';
+      const u = new SpeechSynthesisUtterance('hi');
+      u.volume = 0; u.rate = 2; u.lang = 'en-US';
       speechSynthesis.speak(u);
+      setTimeout(() => { try { if (!speechSynthesis.speaking) speechSynthesis.cancel(); } catch (e) {} }, 400);
       this.unlocked = true;
     } catch (e) { this.unlocked = true; }
   },
-  speak(text, opts = {}) {
+  cloudBase() { return (S.ai.url || '').replace(/\/chat\/completions.*$/, ''); },
+  async cloudUrl(text) {
+    const base = this.cloudBase();
+    if (!S.ai.key || !/^https:/i.test(base)) return null;
+    const ck = (S.ttsVoice || 'nova') + '|' + text;
+    if (this._cache.has(ck)) return this._cache.get(ck);
+    const go = async model => {
+      const body = model === 'tts-1'
+        ? { model, voice: S.ttsVoice || 'nova', input: text, response_format: 'mp3', speed: .9 }
+        : { model, voice: S.ttsVoice || 'nova', input: text, response_format: 'mp3',
+            instructions: 'You are a friendly English teacher. Read aloud warmly and naturally, at a relaxed, clear pace.' };
+      const r = await fetch(base + '/audio/speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + S.ai.key },
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) throw new Error(String(r.status));
+      const url = URL.createObjectURL(await r.blob());
+      this.cloudModel = model;
+      this._cache.set(ck, url);
+      if (this._cache.size > 120) { const k = this._cache.keys().next().value; this._cache.delete(k); }
+      return url;
+    };
+    const models = this.cloudModel ? [this.cloudModel] : ['gpt-4o-mini-tts', 'tts-1'];
+    for (const m of models) {
+      try { return await go(m); } catch (e) { if (String(e.message) === '401') break; }
+    }
+    return null;
+  },
+  async speak(text, opts = {}) {
     if (!S.sound && !opts.force) return;
+    if (S.ttsCloud && S.ai.key) {
+      const url = await this.cloudUrl(text).catch(() => null);
+      if (url) {
+        this.stop();
+        try {
+          const a = new Audio(url);
+          a.onended = opts.onend || null;
+          a.onerror = opts.onerror || null;
+          this.audio = a;
+          await a.play();
+          return;
+        } catch (e) { this.audio = null; }
+      } else if (Date.now() - this._warnT > 30000) {
+        this._warnT = Date.now();
+        toast('当前接口不支持在线语音，已用系统语音', '🎧');
+      }
+    }
     if (!('speechSynthesis' in window)) return;
     try {
       this.unlock();
@@ -471,18 +533,29 @@ const TTS = {
       u.lang = 'en-US';
       if (this.voice) { try { u.voice = this.voice; } catch (e) {} }
       u.rate = opts.rate || .85;
+      u.pitch = opts.pitch || .97;
       if (opts.onend) u.onend = opts.onend;
       if (opts.onerror) u.onerror = opts.onerror;
       speechSynthesis.speak(u);
       if (speechSynthesis.paused) speechSynthesis.resume();
     } catch (e) {}
+    if (this.noEn && Date.now() - this._warnT > 30000) {
+      this._warnT = Date.now();
+      toast('本机缺少英文语音引擎：手机设置→文字转语音→安装 Google TTS，或配 API Key 启用在线语音', '🔌');
+    }
   },
-  stop() { try { speechSynthesis.cancel(); } catch (e) {} }
+  stop() {
+    try { speechSynthesis.cancel(); } catch (e) {}
+    if (this.audio) { try { this.audio.pause(); } catch (e) {} this.audio = null; }
+  }
 };
 TTS.init();
-['pointerdown', 'touchstart'].forEach(ev =>
+['pointerdown', 'touchend'].forEach(ev =>
   window.addEventListener(ev, () => TTS.unlock(), { once: true, passive: true, capture: true }));
-function speak(text) { TTS.stop(); TTS.speak(text); }
+function speak(text) {
+  TTS.stop();
+  setTimeout(() => TTS.speak(text), 220);
+}
 function copyText(text, tip) {
   const done = () => toast(tip || '已复制到剪贴板', '📋');
   if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
@@ -1399,15 +1472,15 @@ const StoryPlayer = {
       const nextChunk = () => {
         if (my !== this.seq) return;
         if (ci >= chunks.length) { pi++; return speakPara(); }
-        const c = chunks[ci++];
-        let done = false;
-        const adv = () => { if (done) return; done = true; nextChunk(); };
-        TTS.speak(c, { rate: .82, force: true, onend: adv, onerror: adv });
-        setTimeout(adv, Math.min(30000, c.split(' ').length * 700 + 2500));
+      const c = chunks[ci++];
+      let done = false;
+      const adv = () => { if (done) return; done = true; nextChunk(); };
+      TTS.speak(c, { rate: .82, force: true, onend: adv, onerror: adv });
+      setTimeout(adv, Math.min(30000, c.split(' ').length * 700 + 2500));
       };
       nextChunk();
     };
-    speakPara();
+    setTimeout(speakPara, 220);
   },
   stop(silent) {
     this.seq++;
@@ -1549,6 +1622,23 @@ function renderMe() {
     </div>
 
     <div class="card">
+      <h3>🎙️ 语音设置</h3>
+      <div class="setrow">
+        <div class="lab"><span class="ic">☁️</span><div>在线高音质语音<small>${S.ai.key ? '真人感神经网络语音 · 走已配 API Key' : '需先在「AI教练」页配置 API Key'}</small></div></div>
+        <div class="switch ${S.ttsCloud ? 'on' : ''}" id="ttscloud-sw"></div>
+      </div>
+      <div class="setrow">
+        <div class="lab"><span class="ic">🎭</span><div>在线音色<small>${{nova:'女声·清晰亲切',shimmer:'女声·温柔柔和',echo:'男声·干净利落',onyx:'男声·低沉浑厚'}[S.ttsVoice || 'nova']}</small></div></div>
+        <div class="seg" id="voice-seg">${[['nova','Nova'],['shimmer','Shimmer'],['echo','Echo'],['onyx','Onyx']].map(([v, l]) => `<button class="${(S.ttsVoice || 'nova') === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div>
+      </div>
+      <div class="setrow">
+        <div class="lab"><span class="ic">▶️</span><div>试听语音<small id="tts-diag">检测中…</small></div></div>
+        <button class="btn btn-soft btn-sm" id="tts-test">播放</button>
+      </div>
+      <div class="muted" style="line-height:1.8;margin-top:6px">在线语音不支持时自动回退系统语音。词卡自动朗读与故事朗读都会使用当前选择的语音。</div>
+    </div>
+
+    <div class="card">
       <h3>💾 备份与恢复（防丢失）</h3>
       <div class="muted" style="margin-bottom:6px;line-height:1.8">学习数据保存在本机浏览器。换手机 / 给朋友用 / 防清理丢失，请定期生成「备份码」保存到备忘录。</div>
       <div class="setrow">
@@ -1582,7 +1672,7 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        IELTS Coach v2.2 · 雅思教练台<br>
+        IELTS Coach v2.3 · 雅思教练台<br>
         词库：四级完整大纲 ${CET4_WORDS.length} 词（含真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
         数据双重保存在本机（localStorage + IndexedDB 自动互备），不上传任何服务器。
       </div>
@@ -1599,6 +1689,26 @@ function renderMe() {
   });
   $('#sound-sw').addEventListener('click', e => { S.sound = !S.sound; save(); e.target.classList.toggle('on', S.sound); });
   $('#sfx-sw').addEventListener('click', e => { S.sfx = !S.sfx; save(); e.target.classList.toggle('on', S.sfx); if (S.sfx) AudioFX.play('yes'); });
+  $('#ttscloud-sw').addEventListener('click', () => {
+    if (!S.ai.key && !S.ttsCloud) return toast('请先在「AI教练」页配置 API Key（OpenAI 接口支持语音）', '💡');
+    S.ttsCloud = !S.ttsCloud; save(); renderMe();
+    if (S.ttsCloud) toast('已开启在线高音质语音', '☁️');
+  });
+  $('#voice-seg').addEventListener('click', e => {
+    const b = e.target.closest('[data-v]'); if (!b) return;
+    S.ttsVoice = b.dataset.v; TTS._cache.clear(); save(); renderMe();
+  });
+  $('#tts-test').addEventListener('click', () => {
+    speak('Hello! I am your English coach. Let us practice together.');
+  });
+  const setDiag = () => {
+    const el = $('#tts-diag'); if (!el) return;
+    const en = (TTS.voices || []).filter(v => (v.lang || '').toLowerCase().startsWith('en'));
+    el.textContent = en.length
+      ? '本机英文语音 ' + en.length + ' 个' + (TTS.voice ? ' · 当前：' + TTS.voice.name : '')
+      : '⚠️ 本机无英文语音引擎，建议开启在线语音';
+  };
+  setDiag(); setTimeout(setDiag, 1200);
 
   $('#bk-gen').addEventListener('click', async () => {
     const modal = $('#modal'), mask = $('#modalMask');

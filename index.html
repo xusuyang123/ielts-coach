@@ -237,11 +237,12 @@ html[data-trans=down] .page{animation:transD .3s cubic-bezier(.25,.8,.3,1)}
 .reader{background:var(--card);border-radius:18px;padding:22px 18px;box-shadow:var(--shadow)}
 .reader p{font-size:1rem;line-height:2;margin-bottom:14px}
 .reader p.reading{background:var(--pri-soft);border-radius:12px;padding:2px 8px;margin:0 -8px 14px;box-shadow:inset 0 0 0 1.5px var(--pri-line);transition:background .3s}
-.zhsub{font-size:.85rem;line-height:1.8;margin:-6px 0 14px;padding:2px 0 2px 10px;border-left:2.5px solid var(--pri-line);animation:fadeIn .35s}
-@keyframes fadeIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.reader .w.now{background:var(--pri);color:#fff;border-radius:6px;padding:0 3px;box-shadow:0 2px 8px rgba(109,94,242,.4)}
+.zh-t{display:block;margin:-6px 0 14px auto;font-size:.72rem;color:var(--tx3);background:none;border:1.5px dashed var(--line);border-radius:10px;padding:3px 12px}
+.zh-t.on{color:var(--pri);border-color:var(--pri-line);border-style:solid;background:var(--pri-soft)}
+.zhsub{font-size:.85rem;line-height:1.8;margin:-4px 0 14px;padding:2px 0 2px 10px;border-left:2.5px solid var(--pri-line);animation:fadeUp .35s}
+.st-mode{font-size:.72rem;font-weight:600;letter-spacing:.02em}
 #st-listen{font-size:1.15rem}
-#st-zh{font-size:.9rem;font-weight:600}
-#st-zh.on{color:var(--pri);box-shadow:inset 0 0 0 1.5px var(--pri-line);background:var(--pri-soft)}
 .reader .w{padding:0 1px;border-bottom:1.5px dotted var(--tx3)}
 .reader .choice{margin:14px 0;display:flex;flex-direction:column;gap:10px}
 .reader .choice button{background:var(--pri-soft);color:var(--pri);border-radius:14px;padding:13px 16px;font-size:.88rem;font-weight:600;text-align:left;line-height:1.5}
@@ -350,7 +351,7 @@ const DEFAULT_S = {
   hist: {},
   goal: 20, sound: true, sfx: true, theme: 'auto', book: 'cet4',
   exp: 0, lastTab: 'home', lastBackup: 0, schemaV: 2, hintWX: false, hintHome: false,
-  ttsCloud: false, ttsVoice: 'nova', ttsNet: true, ttsAccent: 'us',
+  ttsCloud: false, ttsVoice: 'nova', ttsNet: true, ttsAccent: 'us', ttsStory: 'flow',
   ai: { key: '', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
 };
 let S;
@@ -511,7 +512,7 @@ const TTS = {
     }
     return null;
   },
-  netAudio: null, lastEngine: '', _wToast: false, isAndroid: /android/i.test(navigator.userAgent),
+  netAudio: null, lastEngine: '', _wToast: false,
   playNet(text, opts) {
     return new Promise(resolve => {
       try {
@@ -569,7 +570,7 @@ const TTS = {
     const multi = /\s/.test(String(text).trim());
     if (S.ttsNet !== false) {
       if (await this.playNet(text, opts)) { this.lastEngine = 'net'; return; }
-      if (multi && (this.noEn || this.isAndroid)) {
+      if (multi && this.noEn) {
         const ok = await this.playNetWords(text, opts);
         if (ok) {
           this.lastEngine = 'netw';
@@ -1482,11 +1483,19 @@ function wrapWords(text) {
   ).join('');
 }
 
-/* ---------- 故事朗读器 ---------- */
+/* ---------- 故事朗读器：流畅整句 / 逐词真人 双模式 ---------- */
 const StoryPlayer = {
-  on: false, seq: 0,
+  on: false, seq: 0, _hintT: 0,
+  mode() { return S.ttsStory === 'word' ? 'word' : 'flow'; },
   btnLabel(on) { const b = $('#st-listen'); if (b) { b.textContent = on ? '⏹' : '🔊'; b.title = on ? '停止朗读' : '听英文朗读'; } },
+  modeLabel() { const m = $('#st-mode'); if (m) { m.textContent = this.mode() === 'word' ? '🔤 逐词' : '🎵 流畅'; m.title = this.mode() === 'word' ? '逐词真人发音（点击切换为流畅整句）' : '系统语音流畅整句（听不到声音就切换逐词）'; } },
   toggle() { this.on ? this.stop() : this.start(); },
+  switchMode() {
+    S.ttsStory = this.mode() === 'word' ? 'flow' : 'word';
+    save(); this.modeLabel();
+    toast(S.ttsStory === 'word' ? '逐词模式：词典真人发音 + 单词高亮' : '流畅模式：系统语音整句朗读', this.mode() === 'word' ? '🔤' : '🎵');
+    if (this.on) { this.stop(); this.start(); }
+  },
   chunks(text) {
     const out = [];
     const sents = text.replace(/\s+/g, ' ').match(/[^.!?]+[.!?]+["']?|[^.!?]+$/g) || [text];
@@ -1512,6 +1521,10 @@ const StoryPlayer = {
     const my = this.seq;
     this.btnLabel(true);
     AudioFX.play('tap');
+    if (this.mode() === 'flow' && /android/i.test(navigator.userAgent) && Date.now() - this._hintT > 60000) {
+      this._hintT = Date.now();
+      toast('若听不到声音，点顶栏「🎵 流畅」切到逐词模式', '💡');
+    }
     let pi = 0;
     const speakPara = () => {
       if (my !== this.seq) return;
@@ -1520,27 +1533,53 @@ const StoryPlayer = {
       box.querySelectorAll('p.reading').forEach(x => x.classList.remove('reading'));
       p.classList.add('reading');
       try { p.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+      if (this.mode() === 'word') return this.playWords(p, my, () => { pi++; speakPara(); });
       const chunks = this.chunks(p.textContent.trim());
       let ci = 0;
       const nextChunk = () => {
         if (my !== this.seq) return;
         if (ci >= chunks.length) { pi++; return speakPara(); }
-      const c = chunks[ci++];
-      let done = false;
-      const adv = () => { if (done) return; done = true; nextChunk(); };
-      TTS.speak(c, { rate: .82, force: true, onend: adv, onerror: adv });
-      setTimeout(adv, Math.min(60000, c.split(' ').length * 1100 + 3000));
+        const c = chunks[ci++];
+        let done = false;
+        const adv = () => { if (done) return; done = true; nextChunk(); };
+        TTS.speak(c, { rate: .82, force: true, onend: adv, onerror: adv });
+        setTimeout(adv, Math.min(60000, c.split(' ').length * 1100 + 3000));
       };
       nextChunk();
     };
     setTimeout(speakPara, 220);
+  },
+  playWords(p, my, done) {
+    const words = Array.from(p.querySelectorAll('.w'));
+    if (!words.length) return done();
+    const self = this;
+    const chunks = this.chunks(p.textContent.trim());
+    const stops = [];
+    let count = 0;
+    chunks.forEach(c => { const n = (c.match(/[A-Za-z'-]+/g) || []).length; stops.push(count + n); count += n; });
+    let i = 0;
+    const clear = () => p.querySelectorAll('.w.now').forEach(x => x.classList.remove('now'));
+    const next = () => {
+      if (my !== self.seq) return;
+      if (i >= words.length) { clear(); return done(); }
+      const w = words[i];
+      clear(); w.classList.add('now');
+      try { w.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+      const pause = stops.indexOf(i + 1) >= 0 ? 460 : 90;
+      i++;
+      let adv = false;
+      const go = () => { if (adv) return; adv = true; setTimeout(next, pause); };
+      TTS.playNet(w.dataset.w).then(go);
+      setTimeout(go, 5000);
+    };
+    next();
   },
   stop(silent) {
     this.seq++;
     this.on = false;
     TTS.stop();
     this.btnLabel(false);
-    document.querySelectorAll('p.reading').forEach(x => x.classList.remove('reading'));
+    document.querySelectorAll('p.reading, .w.now').forEach(x => { x.classList.remove('reading'); x.classList.remove('now'); });
   }
 };
 
@@ -1556,8 +1595,8 @@ function openStory(id) {
     <div class="sess-top">
       <button class="x" id="st-back">←</button>
       <div class="muted">${story.icon} ${esc(story.title)}</div>
-      <div style="display:flex;gap:8px">
-        <button class="x" id="st-zh" title="中文字幕">译</button>
+      <div style="display:flex;gap:6px">
+        <button class="x st-mode" id="st-mode">🎵 流畅</button>
         <button class="x" id="st-listen" title="听英文朗读">🔊</button>
       </div>
     </div>
@@ -1565,20 +1604,8 @@ function openStory(id) {
   </div>`;
   $('#st-back').addEventListener('click', () => { StoryPlayer.stop(); nav('#story'); });
   $('#st-listen').addEventListener('click', () => StoryPlayer.toggle());
-  $('#st-zh').addEventListener('click', () => {
-    reader.zh = !reader.zh;
-    $('#st-zh').classList.toggle('on', reader.zh);
-    AudioFX.play('tap');
-    applyZh();
-  });
-  function applyZh() {
-    box.querySelectorAll('.zhsub').forEach(x => x.remove());
-    if (!reader.zh) return;
-    box.querySelectorAll('p.en').forEach(p => {
-      const zh = p.dataset.zh; if (!zh) return;
-      p.insertAdjacentHTML('afterend', `<p class="muted zhsub">${esc(zh)}</p>`);
-    });
-  }
+  $('#st-mode').addEventListener('click', () => StoryPlayer.switchMode());
+  StoryPlayer.modeLabel();
 
   const box = $('#reader');
   function revealNext() {
@@ -1586,7 +1613,7 @@ function openStory(id) {
     if (!node) return finish();
     reader.idx++;
     if (node.t) {
-      box.insertAdjacentHTML('beforeend', `<p class="en" data-zh="${esc(node.zh || '')}">${wrapWords(node.t)}</p>${reader.zh && node.zh ? `<p class="muted zhsub">${esc(node.zh)}</p>` : ''}`);
+      box.insertAdjacentHTML('beforeend', `<p class="en" data-zh="${esc(node.zh || '')}">${wrapWords(node.t)}</p>${node.zh ? `<button class="zh-t">译 ▾</button>` : ''}`);
       addXP(3); reader.earned += 3;
     } else if (node.c) {
       box.insertAdjacentHTML('beforeend', `<div class="choice">${node.c.map((o, i) =>
@@ -1597,7 +1624,7 @@ function openStory(id) {
         AudioFX.play('tap'); buzz(10);
         if (!S.storyOpts[key]) { addXP(15); reader.earned += 15; S.storyOpts[key] = true; }
         b.closest('.choice').innerHTML = `<div class="tag g" style="display:inline-block">✓ ${esc(opt.l)}</div>`;
-        opt.tail.forEach(t => box.insertAdjacentHTML('beforeend', `<p class="en" data-zh="${esc(t.zh || '')}">${wrapWords(t.t)}</p>${reader.zh && t.zh ? `<p class="muted zhsub">${esc(t.zh)}</p>` : ''}`));
+        opt.tail.forEach(t => box.insertAdjacentHTML('beforeend', `<p class="en" data-zh="${esc(t.zh || '')}">${wrapWords(t.t)}</p>${t.zh ? `<button class="zh-t">译 ▾</button>` : ''}`));
         save();
         finish();
       }));
@@ -1624,6 +1651,19 @@ function openStory(id) {
   }
   revealNext();
   box.addEventListener('click', e => {
+    const zt = e.target.closest('.zh-t');
+    if (zt) {
+      const p = zt.previousElementSibling && zt.previousElementSibling.classList.contains('en') ? zt.previousElementSibling : zt.parentElement.querySelector('p.en:last-of-type');
+      const zh = p && p.dataset.zh; if (!zh) return;
+      const next = zt.nextElementSibling;
+      if (next && next.classList.contains('zhsub')) {
+        next.remove(); zt.textContent = '译 ▾'; zt.classList.remove('on'); AudioFX.play('tap');
+      } else {
+        zt.insertAdjacentHTML('afterend', `<p class="muted zhsub">${esc(zh)}</p>`);
+        zt.textContent = '译 ▴'; zt.classList.add('on'); AudioFX.play('flip');
+      }
+      return;
+    }
     const w = e.target.closest('.w');
     if (w) openWordSheet(w.dataset.w, true);
   });
@@ -1710,6 +1750,10 @@ function renderMe() {
         <div class="seg" id="accent-seg">${[['us','美音'],['uk','英音']].map(([v, l]) => `<button class="${(S.ttsAccent || 'us') === v ? 'on' : ''}" data-a="${v}">${l}</button>`).join('')}</div>
       </div>
       <div class="setrow">
+        <div class="lab"><span class="ic">📖</span><div>故事朗读模式<small>${S.ttsStory === 'word' ? '逐词真人发音 + 单词高亮（无声机型用这个）' : '系统语音整句朗读 · 更流畅'}</small></div></div>
+        <div class="seg" id="storymode-seg">${[['flow','🎵 流畅'],['word','🔤 逐词']].map(([v, l]) => `<button class="${(S.ttsStory || 'flow') === v ? 'on' : ''}" data-sm="${v}">${l}</button>`).join('')}</div>
+      </div>
+      <div class="setrow">
         <div class="lab"><span class="ic">▶️</span><div>试听语音<small id="tts-diag">点击播放，会显示实际使用的引擎</small></div></div>
         <button class="btn btn-soft btn-sm" id="tts-test">播放</button>
       </div>
@@ -1750,7 +1794,7 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        IELTS Coach v2.5 · 雅思教练台<br>
+        IELTS Coach v2.6 · 雅思教练台<br>
         词库：四级完整大纲 ${CET4_WORDS.length} 词（含真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
         数据双重保存在本机（localStorage + IndexedDB 自动互备），不上传任何服务器。
       </div>
@@ -1784,6 +1828,11 @@ function renderMe() {
     const b = e.target.closest('[data-a]'); if (!b) return;
     S.ttsAccent = b.dataset.a; save(); renderMe();
     speak(b.dataset.a === 'uk' ? 'British accent' : 'American accent');
+  });
+  $('#storymode-seg').addEventListener('click', e => {
+    const b = e.target.closest('[data-sm]'); if (!b) return;
+    S.ttsStory = b.dataset.sm; save(); renderMe();
+    toast(S.ttsStory === 'word' ? '故事将用逐词真人发音朗读' : '故事将用系统语音流畅朗读', S.ttsStory === 'word' ? '🔤' : '🎵');
   });
   $('#tts-test').addEventListener('click', async () => {
     const eng = await TTS.speak('Hello! I am your English coach. Let us practice together.', { force: true });

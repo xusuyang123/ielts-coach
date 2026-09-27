@@ -309,6 +309,10 @@ html[data-trans=down] .page{animation:transD .3s cubic-bezier(.25,.8,.3,1)}
 .fun .fun-wall .fw span{font-size:.8rem;color:var(--tx2);display:block;margin-top:3px;line-height:1.6}
 .fun .fun-wall .fw span i{font-style:normal;color:var(--pri);font-weight:700}
 .fun .mbtn{display:block;width:100%;padding:11px;border-radius:12px;font-size:.8rem;font-weight:600;color:var(--tx2);background:none;border:1.5px dashed var(--line);margin-top:4px}
+.fun .wx-card{margin:10px 0 14px;padding:16px;border-radius:16px;background:var(--pri-soft);color:var(--pri)}
+.fun .wx-card span{font-size:.78rem;opacity:.8;display:block;margin-bottom:4px}
+.fun .wx-card b{font-size:1.25rem;letter-spacing:1px;word-break:break-all}
+.fun .wx-copy{display:block;width:100%;padding:12px;border-radius:14px;font-size:.95rem;font-weight:800;color:#fff;background:var(--pri);margin-top:6px}
 #funBubble{position:fixed;right:14px;bottom:calc(var(--tabbar-h) + 14px);width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-size:1.35rem;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(245,158,11,.45);z-index:80;animation:funWave 2.6s ease-in-out infinite}
 #funBubble.hide{display:none}
 #funBubble:active{transform:scale(.9)}
@@ -479,35 +483,19 @@ const FUN_Q = [
     ],
   },
   {
-    id: 'ielts-score', emoji: '🎯', sub: '大胆猜，猜中了我给你加分',
-    q: '你猜你的雅思最终能考几分？',
+    id: 'who-am-i', emoji: '🙋', sub: '考验我们缘分的时候到了',
+    q: '你知道我是谁吗？',
     opts: [
-      { t: '7 分', r: '7 分！稳了！出分那天记得来还愿！', e: '🎯' },
-      { t: '8 分', r: '8 分？你比我还敢想，但我喜欢！', e: '🎓' },
+      { t: '那我肯定知道啊！', r: '懂我！经验 +5 到手！', e: '💯', xp: 5 },
+      { t: '呜呜呜 加一下v吧！', r: '微信号奉上，快来加我～', e: '💌', wx: 'Yang20076019' },
     ],
   },
   {
-    id: 'study-today', emoji: '📚', sub: '这是一个严肃的问题',
-    q: '今天适合学习吗？',
+    id: 'fav-music', emoji: '🎧', sub: '来，对个暗号',
+    q: '徐sy最喜欢的音乐是？',
     opts: [
-      { t: '适合', r: '自律使人优秀，今天词汇量 +1！', e: '📚' },
-      { t: '不适合', r: '借口！先背一组单词压压惊！', e: '😤' },
-    ],
-  },
-  {
-    id: 'milk-tea', emoji: '🧋', sub: '只能选一个，别贪心',
-    q: '奶茶和雅思，你选哪个？',
-    opts: [
-      { t: '奶茶', r: '选奶茶？雅思已经在哭晕在厕所了。', e: '🧋' },
-      { t: '雅思', r: '选雅思？你是个狠人，敬你是条汉子！', e: '🏆' },
-    ],
-  },
-  {
-    id: 'hard-word', emoji: '👻', sub: '诚实回答，别糊弄自己',
-    q: '遇到不认识的单词怎么办？',
-    opts: [
-      { t: '查字典', r: '好习惯！词汇量就是这么攒出来的！', e: '📖' },
-      { t: '跳过', r: '跳过的单词，都会在考试里等你。', e: '👻' },
+      { t: 'R&B', r: '方大同yyds！', e: '🎵' },
+      { t: 'Rap', r: '法老也不错哦～', e: '🎤' },
     ],
   },
 ];
@@ -515,6 +503,20 @@ const funMask = $('#funMask');
 const funBubble = $('#funBubble');
 function funPending() { return FUN_Q.find(f => !S.funAnswered[f.id]); }
 function funClose() { funMask.classList.remove('show'); }
+function copyWx(v, done) {
+  const ok = () => { toast('微信号已复制：' + v, '📋'); done && done(); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(v).then(ok).catch(() => copyWxLegacy(v, ok));
+  } else copyWxLegacy(v, ok);
+}
+function copyWxLegacy(v, ok) {
+  const ta = document.createElement('textarea');
+  ta.value = v; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); ok(); }
+  catch (e) { toast('复制失败，请手动记下微信号', '😅'); }
+  ta.remove();
+}
 function funShow(f) {
   if (!funMask) return;
   funMask.innerHTML = `<div class="fun">
@@ -530,6 +532,19 @@ function funShow(f) {
     const o = f.opts[+b.dataset.i];
     S.funAnswered[f.id] = true; S.funChosen[f.id] = +b.dataset.i; save();
     AudioFX.play('yes'); buzz([30, 40, 50]);
+    if (o.xp) addXP(o.xp);
+    if (o.wx) {
+      funMask.innerHTML = `<div class="fun">
+        <button class="fx" id="funX">✕</button>
+        <div class="fun-r"><span class="re">${o.e}</span>${esc(o.r)}</div>
+        <div class="wx-card"><span>微信号</span><b>${esc(o.wx)}</b></div>
+        <button class="wx-copy" id="funCopyWx">📋 一键复制微信号</button>
+      </div>`;
+      funMask.querySelector('#funX').addEventListener('click', funClose);
+      funMask.querySelector('#funCopyWx').addEventListener('click', () => copyWx(o.wx, funClose));
+      funMask.addEventListener('click', e => { if (e.target === funMask) funClose(); });
+      return;
+    }
     funMask.innerHTML = `<div class="fun">
       <div class="fun-r"><span class="re">${o.e}</span>${esc(o.r)}</div>
     </div>`;

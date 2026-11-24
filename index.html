@@ -89,6 +89,7 @@ html[data-trans=down] .page{animation:transD .3s cubic-bezier(.25,.8,.3,1)}
 .qa b{font-size:.9rem}
 .qa span{font-size:.7rem;color:var(--tx2)}
 .qa .cnt{margin-left:auto;font-size:.68rem;color:var(--pri);background:var(--pri-soft);padding:1px 8px;border-radius:99px;font-weight:700}
+.qa .bk{align-self:flex-start;margin-top:2px;font-size:.62rem;color:var(--pri);background:var(--pri-soft);padding:1px 8px;border-radius:99px;font-weight:700}
 
 /* task list */
 .task{display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px dashed var(--line);font-size:.88rem}
@@ -1023,7 +1024,7 @@ function renderHome() {
     </div>
 
     <div class="qgrid">
-      <button class="qa" data-go="#train/new"><span class="ic">📖</span><b>背新词</b><span>主动回忆 · 最有效</span></button>
+      <button class="qa" data-go="#train/new"><span class="ic">📖</span><b>背新词</b><span>主动回忆 · 最有效</span><span class="bk">${esc(book.name)}</span></button>
       <button class="qa" data-go="#train/quiz"><span class="ic">⚡</span><b>快速测验</b><span>10题四选一</span></button>
       <button class="qa" data-go="#train/review"><span class="ic">🔁</span><b>复习错词</b><span>抗遗忘复习</span>${reviewPool ? `<span class="cnt">${reviewPool}</span>` : ''}</button>
       <button class="qa" data-go="#story"><span class="ic">🐉</span><b>故事冒险</b><span>读故事 · 涨经验</span></button>
@@ -1979,10 +1980,26 @@ function renderMe() {
     </div>
 
     <div class="card">
+      <h3>💾 备份与恢复（防丢失）</h3>
+      <div class="muted" style="margin-bottom:6px;line-height:1.8">学习数据保存在本机浏览器。换手机 / 给朋友用 / 防清理丢失，请定期生成「备份码」保存到备忘录。</div>
       <div class="setrow">
-        <div class="lab"><span class="ic">🤖</span><div>AI 教练<small>配置 API Key 后可批改、生成练习与语音</small></div></div>
-        <button class="btn btn-soft btn-sm" id="goto-ai">进入</button>
+        <div class="lab"><span class="ic">🔐</span><div>生成备份码<small>复制后存到备忘录/微信收藏</small></div></div>
+        <button class="btn btn-soft btn-sm" id="bk-gen">生成</button>
       </div>
+      <div class="setrow">
+        <div class="lab"><span class="ic">♻️</span><div>从备份码恢复<small>换设备后粘贴恢复全部进度</small></div></div>
+        <button class="btn btn-soft btn-sm" id="bk-restore">恢复</button>
+      </div>
+      <div class="setrow">
+        <div class="lab"><span class="ic">📤</span><div>导出 JSON 文件<small>下载备份文件到本地</small></div></div>
+        <button class="btn btn-soft btn-sm" id="exp-btn">导出</button>
+      </div>
+      <div class="setrow">
+        <div class="lab"><span class="ic">📥</span><div>导入 JSON 文件<small>从备份文件恢复</small></div></div>
+        <button class="btn btn-soft btn-sm" id="imp-btn">导入</button>
+      </div>
+      <div class="muted" id="bk-last" style="margin-top:8px">${S.lastBackup ? '上次备份：' + new Date(S.lastBackup).toLocaleString('zh-CN') : '⚠️ 还没有备份过'}</div>
+      <input type="file" id="imp-file" accept=".json" style="display:none">
     </div>
 
     <div class="card">
@@ -2015,29 +2032,6 @@ function renderMe() {
     </div>
 
     <div class="card">
-      <h3>💾 备份与恢复（防丢失）</h3>
-      <div class="muted" style="margin-bottom:6px;line-height:1.8">学习数据保存在本机浏览器。换手机 / 给朋友用 / 防清理丢失，请定期生成「备份码」保存到备忘录。</div>
-      <div class="setrow">
-        <div class="lab"><span class="ic">🔐</span><div>生成备份码<small>复制后存到备忘录/微信收藏</small></div></div>
-        <button class="btn btn-soft btn-sm" id="bk-gen">生成</button>
-      </div>
-      <div class="setrow">
-        <div class="lab"><span class="ic">♻️</span><div>从备份码恢复<small>换设备后粘贴恢复全部进度</small></div></div>
-        <button class="btn btn-soft btn-sm" id="bk-restore">恢复</button>
-      </div>
-      <div class="setrow">
-        <div class="lab"><span class="ic">📤</span><div>导出 JSON 文件<small>下载备份文件到本地</small></div></div>
-        <button class="btn btn-soft btn-sm" id="exp-btn">导出</button>
-      </div>
-      <div class="setrow">
-        <div class="lab"><span class="ic">📥</span><div>导入 JSON 文件<small>从备份文件恢复</small></div></div>
-        <button class="btn btn-soft btn-sm" id="imp-btn">导入</button>
-      </div>
-      <div class="muted" id="bk-last" style="margin-top:8px">${S.lastBackup ? '上次备份：' + new Date(S.lastBackup).toLocaleString('zh-CN') : '⚠️ 还没有备份过'}</div>
-      <input type="file" id="imp-file" accept=".json" style="display:none">
-    </div>
-
-    <div class="card">
       <h3>🗑️ 危险操作</h3>
       <div class="setrow">
         <div class="lab"><span class="ic">🗑️</span><div>清空重置<small>删除本机全部学习数据</small></div></div>
@@ -2054,6 +2048,13 @@ function renderMe() {
       <div class="setrow">
         <div class="lab"><span class="ic">🎊</span><div>彩蛋墙<small>回顾所有已回答的趣味问题</small></div></div>
         <button class="btn btn-soft btn-sm" id="fun-wall-btn">打开</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="setrow">
+        <div class="lab"><span class="ic">🤖</span><div>AI 教练<small>配置 API Key 后可批改、生成练习与语音</small></div></div>
+        <button class="btn btn-soft btn-sm" id="goto-ai">进入</button>
       </div>
     </div>
 

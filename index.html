@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="徐老师英语">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
 <title>徐老师的英语学习网站</title>
 <style>
 :root{
@@ -2061,7 +2065,7 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        徐老师的英语学习网站 v3.2<br>
+        徐老师的英语学习网站 v3.3<br>
         词库：四六级核心 ${CORE_WORDS.length} 词 + 四级完整大纲 ${CET4_WORDS.length} 词（真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
         数据双重保存在本机（localStorage + IndexedDB 自动互备）${syncReady() ? '，登录后可自动同步到云端' : '，不上传任何服务器'}。
       </div>
@@ -2471,6 +2475,13 @@ $('#sheet').addEventListener('click', e => { if (e.target.classList.contains('gr
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && SYNC.on) syncPull(true); });
 window.addEventListener('online', () => { if (SYNC.on) syncPull(true); });
 
+</script>
+<script>
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
 </script>
 </body>
 </html>

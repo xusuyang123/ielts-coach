@@ -1,0 +1,17 @@
+{
+  "name": "徐老师的英语学习网站",
+  "short_name": "徐老师英语",
+  "description": "四六级核心词与雅思词汇背诵，支持云端同步与离线使用",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#6d5ef2",
+  "theme_color": "#6d5ef2",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

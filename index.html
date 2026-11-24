@@ -2215,7 +2215,8 @@ const SYNC_META_KEY = 'ieltsCoachSyncV1';
 try { Object.assign(SYNC.meta, JSON.parse(localStorage.getItem(SYNC_META_KEY) || '{}')); } catch (e) {}
 let _pendingSignup = null;
 
-const syncReady = () => !!(SYNC.env && SYNC.key);
+/* github.io 不在云开发跨域白名单内，那边保持纯本地模式 */
+const syncReady = () => !!(SYNC.env && SYNC.key) && !/(^|\.)github\.io$/.test(location.hostname);
 const syncUid = () => (SYNC.user && (SYNC.user.id || SYNC.user.uid)) || '';
 function syncSaveMeta() { try { localStorage.setItem(SYNC_META_KEY, JSON.stringify(SYNC.meta)); } catch (e) {} }
 function syncStatusText() {

@@ -186,6 +186,9 @@ html[data-trans=down] .page{animation:transD .3s cubic-bezier(.25,.8,.3,1)}
 .vrow .m{flex:1;font-size:.78rem;color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .vrow .st{width:10px;height:10px;border-radius:50%;background:var(--line);flex-shrink:0}
 .vrow .st.s2{background:var(--green)} .vrow .st.s1{background:var(--amber)} .vrow .st.s0{background:var(--red)}
+.vrow .vcol{flex:1;min-width:0}
+.vrow .pin{font-size:.72rem;flex-shrink:0}
+.vrow .nbx{flex-shrink:0;font-size:.7rem;font-weight:700;color:var(--red);background:var(--red-soft);border-radius:9px;padding:7px 10px}
 .loadmore{width:100%;padding:14px;color:var(--pri);font-weight:600;font-size:.85rem}
 
 /* bottom sheet */
@@ -361,7 +364,19 @@ const IELTS_CORE = [
 ];
 
 const CET4_HF = CET4_WORDS.filter(w => w.hf);
+
+/* 核心词：从四六级大纲词库提取真题高频且资料完整（音标/例句/真题/同义/同根）的词 */
+const CORE_WORDS = (() => {
+  const seen = new Set(), out = [];
+  for (const w of CET4_WORDS) {
+    if (!w.hf || !w.s || !w.r || !w.e || !w.p || seen.has(w.w)) continue;
+    seen.add(w.w); out.push(w);
+  }
+  return out;
+})();
+
 const BOOKS = {
+  core:   { name: '核心词', list: CORE_WORDS, desc: `四六级核心精选 ${CORE_WORDS.length} 词（约 2000），真题高频 + 资料完整，先把这批吃透` },
   cet4:   { name: '四级词汇 · 完整', list: CET4_WORDS, desc: '完整四级大纲词库，先背高频更高效' },
   cet4hf: { name: '四级真题高频',    list: CET4_HF,    desc: '只含真题里出现过的词，应试优先' },
   ielts:  { name: '雅思核心精选',    list: IELTS_CORE, desc: '雅思学术高频词，四六级打底后进阶' },
@@ -375,12 +390,12 @@ const LEVELS = [[0,'新手读者'],[60,'故事学徒'],[200,'勤奋学徒'],[500
 /* ---------- State ---------- */
 const LS_KEY = 'ieltsCoachV1';
 const DEFAULT_S = {
-  voc: {}, seen: {}, storyDone: {}, storyOpts: {},
+  voc: {}, seen: {}, notebook: {}, storyDone: {}, storyOpts: {},
   streak: { n: 0, total: 0, last: '' },
   daily: { date: '', n: 0, q: 0, r: 0, story: false },
   hist: {},
-  goal: 20, sound: true, sfx: true, theme: 'auto', book: 'cet4',
-  exp: 0, lastTab: 'home', lastBackup: 0, schemaV: 2, hintWX: false, hintHome: false,
+  goal: 20, sound: true, sfx: true, theme: 'auto', book: 'core',
+  exp: 0, lastTab: 'home', lastBackup: 0, schemaV: 3, hintWX: false, hintHome: false,
   ttsCloud: false, ttsVoice: 'nova', ttsNet: true, ttsAccent: 'us', ttsStory: 'flow',
   funAnswered: {}, funChosen: {}, funBubble: true,
   ai: { key: '', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat' },
@@ -393,6 +408,28 @@ function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch (e) {}
   clearTimeout(save._t);
   save._t = setTimeout(mirrorIdb, 1500);
+}
+
+/* ---------- 生词本：不熟练词自动收录，仅可手动取消 ---------- */
+function nbAdd(w) { if (w && !S.notebook[w]) S.notebook[w] = Date.now(); }
+function nbRemove(w) { if (w) delete S.notebook[w]; }
+function nbCount() { return Object.keys(S.notebook || {}).length; }
+function cancelNb(w) {
+  nbRemove(w);
+  S.voc[w] = 2; S.seen[w] = Date.now(); save();
+  toast('已取消标记 · 移出词汇本', '✅');
+  if ($('#vlist')) { bookFilter.shown = 0; renderVocabList(); }
+}
+function migrateState() {
+  S.notebook = Object.assign({}, S.notebook || {});
+  if ((S.schemaV || 0) < 3) {
+    Object.keys(S.voc || {}).forEach(k => {
+      if ((S.voc[k] === 0 || S.voc[k] === 1) && !S.notebook[k]) S.notebook[k] = Date.now();
+    });
+    S.schemaV = 3;
+  }
+  if (!BOOKS[S.book]) S.book = 'core';
+  save();
 }
 
 /* ---------- IndexedDB 备用存储：双写互备，一边被清自动恢复 ---------- */
@@ -1083,7 +1120,14 @@ function renderTrain() {
     <div class="card" style="margin-top:14px">
       <h3>🧠 记忆机制（学习自墨墨/多邻国）</h3>
       <div class="muted" style="line-height:1.9">
-        诚实标记是核心：不认识/模糊的词会自动进入复习队列反复出现，直到你标「认识」才离开。每天把队列清空一次，比大量背新词更抗遗忘。
+        诚实标记是核心：不认识/模糊的词会自动进入复习队列，并自动收进「词汇本 · 生词」反复出现，直到你标「认识」。生词只有你本人在词汇本里取消标记才会移出。
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div><h3 style="margin:0">📌 生词本</h3><div class="muted" style="margin-top:4px">不熟练的词自动收录，共 <b>${nbCount()}</b> 词</div></div>
+        <button class="btn btn-soft btn-sm" data-go="#book/nb">去取消</button>
       </div>
     </div>
   </div>`;
@@ -1196,6 +1240,7 @@ function renderCardSession() {
     buzz(j === 2 ? 18 : j === 1 ? 12 : [26, 40, 26]);
     S.voc[item.w] = j;
     S.seen[item.w] = Date.now();
+    if (j !== 2) nbAdd(item.w);
     SESS.stats[j === 2 ? 'yes' : j === 1 ? 'fuzzy' : 'no']++;
     if (SESS.firstPass) {
       if (SESS.kind === 'new') S.daily.n++;
@@ -1272,7 +1317,7 @@ function renderQuiz() {
     } else {
       b.classList.add('bad');
       app.querySelectorAll('.qopt').forEach((x, i) => { if (q.opts[i].w === q.w.w) x.classList.add('ok'); });
-      S.voc[q.w.w] = 0; S.seen[q.w.w] = Date.now(); save();
+      S.voc[q.w.w] = 0; S.seen[q.w.w] = Date.now(); nbAdd(q.w.w); save();
       $('#qfb').innerHTML = `<span style="color:var(--red)">✗ 正确答案：${esc(q.w.w)} ${esc(q.w.m)}</span>`;
       AudioFX.play('no'); buzz([30, 50, 30]);
     }
@@ -1298,9 +1343,9 @@ function quizSummary() {
 }
 
 /* ================= VOCAB BOOK ================= */
-let bookFilter = { q: '', st: 'all', hf: false, shown: 0 };
+let bookFilter = { q: '', st: 'all', hf: false, nb: false, shown: 0 };
 function renderBook() {
-  bookFilter = { q: '', st: 'all', hf: false, shown: 0 };
+  bookFilter = { q: '', st: 'all', hf: false, nb: location.hash === '#book/nb', shown: 0 };
   const book = BOOKS[S.book];
   app.innerHTML = `
   <div class="page">
@@ -1309,7 +1354,8 @@ function renderBook() {
       <input id="vq" placeholder="搜索单词或释义..." autocomplete="off">
     </div>
     <div class="chips" id="st-chips">
-      <button class="chip on" data-st="all">全部</button>
+      <button class="chip ${bookFilter.nb ? '' : 'on'}" data-st="all">全部</button>
+      <button class="chip ${bookFilter.nb ? 'on' : ''}" data-nb="1">📌 生词 ${nbCount()}</button>
       <button class="chip" data-st="new">未学</button>
       <button class="chip" data-st="0">不认识</button>
       <button class="chip" data-st="1">模糊</button>
@@ -1323,13 +1369,16 @@ function renderBook() {
     renderBook._t = setTimeout(() => { bookFilter.q = e.target.value.trim().toLowerCase(); bookFilter.shown = 0; renderVocabList(); }, 220);
   });
   app.querySelectorAll('#st-chips .chip').forEach(c => c.addEventListener('click', () => {
-    if (c.dataset.hf) {
-      bookFilter.hf = !bookFilter.hf;
+    if (c.dataset.nb) {
+      bookFilter.nb = !bookFilter.nb; bookFilter.hf = false;
+    } else if (c.dataset.hf) {
+      bookFilter.hf = !bookFilter.hf; bookFilter.nb = false;
     } else {
-      bookFilter.st = c.dataset.st; bookFilter.hf = false;
+      bookFilter.st = c.dataset.st; bookFilter.hf = false; bookFilter.nb = false;
     }
     app.querySelectorAll('#st-chips .chip').forEach(x => x.classList.remove('on'));
-    if (bookFilter.hf) c.classList.add('on');
+    if (bookFilter.nb) app.querySelector('#st-chips [data-nb]')?.classList.add('on');
+    else if (bookFilter.hf) c.classList.add('on');
     else app.querySelector(`#st-chips [data-st="${bookFilter.st}"]`)?.classList.add('on');
     bookFilter.shown = 0; renderVocabList();
   }));
@@ -1338,38 +1387,62 @@ function renderBook() {
 
 function renderVocabList() {
   const book = BOOKS[S.book];
-  let list = book.list;
-  if (bookFilter.hf) list = list.filter(w => w.hf);
-  if (bookFilter.st === 'new') list = list.filter(w => S.voc[w.w] === undefined);
-  else if (bookFilter.st !== 'all') list = list.filter(w => S.voc[w.w] === +bookFilter.st);
+  let list;
+  if (bookFilter.nb) {
+    list = Object.keys(S.notebook).map(k => WORDMAP.get(k)).filter(Boolean)
+      .sort((a, b) => a.w.localeCompare(b.w));
+  } else {
+    list = book.list;
+    if (bookFilter.hf) list = list.filter(w => w.hf);
+    if (bookFilter.st === 'new') list = list.filter(w => S.voc[w.w] === undefined);
+    else if (bookFilter.st !== 'all') list = list.filter(w => S.voc[w.w] === +bookFilter.st);
+  }
   if (bookFilter.q) list = list.filter(w => w.w.toLowerCase().includes(bookFilter.q) || (w.m || '').toLowerCase().includes(bookFilter.q));
 
-  $('#bk-sub').textContent = `${book.name} · 筛选出 ${list.length} 词`;
+  $('#bk-sub').textContent = bookFilter.nb
+    ? `📌 生词本 · ${list.length} 词 · 不熟练词自动收录，只有你能取消标记`
+    : `${book.name} · 筛选出 ${list.length} 词`;
   const box = $('#vlist');
-  if (!list.length) { box.innerHTML = '<div class="empty"><div class="e">🔍</div>没有匹配的词</div>'; return; }
+  if (!list.length) {
+    box.innerHTML = `<div class="empty"><div class="e">${bookFilter.nb ? '🎉' : '🔍'}</div>${bookFilter.nb ? '生词本是空的，继续保持' : '没有匹配的词'}</div>`;
+    return;
+  }
 
   const CHUNK = 60;
-  const renderMore = () => {
-    const slice = list.slice(bookFilter.shown, bookFilter.shown + CHUNK);
-    const html = slice.map(w => {
-      const st = S.voc[w.w];
-      return `<button class="vrow" data-w="${esc(w.w)}">
+  const rowHtml = w => {
+    const st = S.voc[w.w], inNb = !!S.notebook[w.w];
+    return `<div class="vrow" data-w="${esc(w.w)}">
+      <div class="vcol">
         <div><span class="w">${esc(w.w)}</span>${w.p ? `<span class="ph">/${esc(w.p)}/</span>` : ''}${w.hf ? ' <span class="badge" style="font-size:.58rem;color:var(--amber);background:var(--amber-soft);border-radius:5px;padding:0 5px;">真题</span>' : ''}</div>
         <div class="m">${esc(w.m)}</div>
-        <div class="st ${st !== undefined ? 's' + st : ''}"></div>
-      </button>`;
-    }).join('');
-    if (bookFilter.shown === 0) box.innerHTML = html;
-    else {
-      box.querySelector('.loadmore')?.remove();
-      box.insertAdjacentHTML('beforeend', html);
-    }
+      </div>
+      ${inNb ? '<span class="pin">📌</span>' : ''}
+      <div class="st ${st !== undefined ? 's' + st : ''}"></div>
+      ${bookFilter.nb ? `<button class="nbx" data-un="${esc(w.w)}">取消</button>` : ''}
+    </div>`;
+  };
+  const bindRows = root => {
+    root.querySelectorAll('.vrow').forEach(r => r.addEventListener('click', e => {
+      if (e.target.closest('.nbx')) return;
+      openWordSheet(r.dataset.w);
+    }));
+    root.querySelectorAll('.nbx').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation(); cancelNb(b.dataset.un);
+    }));
+  };
+  const renderMore = () => {
+    box.querySelector('.loadmore')?.remove();
+    if (bookFilter.shown === 0) box.innerHTML = '';
+    const slice = list.slice(bookFilter.shown, bookFilter.shown + CHUNK);
+    const wrap = document.createElement('div');
+    wrap.innerHTML = slice.map(rowHtml).join('');
+    bindRows(wrap);
+    while (wrap.firstChild) box.appendChild(wrap.firstChild);
     bookFilter.shown += slice.length;
     if (bookFilter.shown < list.length) {
       box.insertAdjacentHTML('beforeend', `<button class="loadmore" id="vmore">加载更多（${list.length - bookFilter.shown} 词）▾</button>`);
       $('#vmore').addEventListener('click', renderMore);
     }
-    box.querySelectorAll('.vrow').forEach(r => r.addEventListener('click', () => openWordSheet(r.dataset.w)));
   };
   renderMore();
 }
@@ -1388,8 +1461,9 @@ function openWordSheet(word, fromStory) {
     return;
   }
   const st = S.voc[w.w];
+  const inNb = !!S.notebook[w.w];
   sheet.innerHTML = `<div class="grab"></div>
-    <h2>${esc(w.w)} <button class="spk2" data-t="${esc(w.w)}">🔊</button></h2>
+    <h2>${esc(w.w)} <button class="spk2" data-t="${esc(w.w)}">🔊</button>${inNb ? '<span class="badge" style="font-size:.66rem;color:var(--amber);background:var(--amber-soft);border-radius:6px;padding:2px 7px;">📌 生词</span>' : ''}</h2>
     ${w.p ? `<div class="phon">/${esc(w.p)}/</div>` : ''}
     <div class="mng">${esc(w.m)}</div>
     ${w.e ? `<div class="sect"><div class="t">💬 例句</div><div class="exblock">${esc(w.e[0])}<div class="cn">${esc(w.e[1] || '')}</div></div></div>` : ''}
@@ -1403,14 +1477,19 @@ function openWordSheet(word, fromStory) {
       <button class="btn j-no ${st === 0 ? 'btn-pri' : ''}" data-s="0">😕 不认识</button>
       <button class="btn j-fuzzy ${st === 1 ? 'btn-pri' : ''}" data-s="1">🤔 模糊</button>
       <button class="btn j-yes ${st === 2 ? 'btn-pri' : ''}" data-s="2">😊 认识</button>
-    </div>`;
+    </div>
+    ${inNb ? '<button class="btn btn-soft btn-block" id="w-un-nb" style="margin-top:10px;color:var(--red)">取消标记（移出词汇本）</button>' : ''}`;
   mask.classList.add('show'); sheet.classList.add('show');
   sheet.querySelector('.spk2').addEventListener('click', speakOne);
   speak(w.w);
   $('#w-mnemo').addEventListener('click', () => openToolModal('mnemo', w.w));
+  $('#w-un-nb')?.addEventListener('click', () => { cancelNb(w.w); closeSheet(); });
   sheet.querySelectorAll('[data-s]').forEach(b => b.addEventListener('click', () => {
-    S.voc[w.w] = +b.dataset.s; S.seen[w.w] = Date.now(); save();
-    closeSheet(); toast('已标记', '✅');
+    const s = +b.dataset.s;
+    S.voc[w.w] = s; S.seen[w.w] = Date.now();
+    if (s !== 2) nbAdd(w.w);
+    save();
+    closeSheet(); toast(s === 2 ? '已标记认识' : '已收进词汇本', s === 2 ? '✅' : '📌');
     if (location.hash.startsWith('#book')) { bookFilter.shown = 0; renderVocabList(); }
   }));
 }
@@ -1957,8 +2036,8 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        IELTS Coach v2.7 · 雅思教练台<br>
-        词库：四级完整大纲 ${CET4_WORDS.length} 词（含真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
+        IELTS Coach v2.8 · 雅思教练台<br>
+        词库：四六级核心 ${CORE_WORDS.length} 词 + 四级完整大纲 ${CET4_WORDS.length} 词（真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
         数据双重保存在本机（localStorage + IndexedDB 自动互备），不上传任何服务器。
       </div>
     </div>
@@ -2074,7 +2153,7 @@ function renderMe() {
     const f = e.target.files[0]; if (!f) return;
     const reader = new FileReader();
     reader.onload = () => {
-      try { const data = JSON.parse(reader.result); if (!data.voc) throw 0; S = Object.assign({}, DEFAULT_S, data); save(); toast('导入成功', '📥'); render(); }
+      try { const data = JSON.parse(reader.result); if (!data.voc) throw 0; S = Object.assign({}, DEFAULT_S, data); migrateState(); toast('导入成功', '📥'); render(); }
       catch (err) { toast('文件格式不正确', '❌'); }
     };
     reader.readAsText(f);
@@ -2112,6 +2191,7 @@ $('#tabbar').addEventListener('click', e => {
 $('#sheet').addEventListener('click', e => { if (e.target.classList.contains('grab')) closeSheet(); });
 (async function boot() {
   await storageRecover();
+  migrateState();
   ensureDay();
   requestPersist();
   if (!location.hash && S.lastTab && S.lastTab !== 'home' && TAB_ORDER.includes(S.lastTab)) {

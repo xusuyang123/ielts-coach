@@ -113,6 +113,8 @@ html[data-trans=down] .page{animation:transD .3s cubic-bezier(.25,.8,.3,1)}
 .btn-danger{background:var(--red-soft);color:var(--red)}
 .btn-block{width:100%}
 .btn-sm{padding:7px 12px;min-height:36px;border-radius:10px;font-size:.78rem}
+.auth-inp{width:100%;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--tx);font-size:.9rem;margin-bottom:10px;outline:none}
+.auth-inp:focus{border-color:var(--pri)}
 
 /* chips */
 .chips{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
@@ -409,6 +411,7 @@ function save() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch (e) {}
   clearTimeout(save._t);
   save._t = setTimeout(mirrorIdb, 1500);
+  syncTouch();
 }
 
 /* ---------- 生词本：不熟练词自动收录，仅可手动取消 ---------- */
@@ -1919,6 +1922,17 @@ function renderMe() {
   }
   const maxN = Math.max(1, ...days.map(d => d.n));
 
+  const syncCard = syncReady() ? `
+    <div class="card">
+      <h3>☁️ 账号与同步</h3>
+      <div class="setrow">
+        <div class="lab"><span class="ic">${SYNC.on ? '✅' : '👤'}</span><div>${SYNC.on ? esc(SYNC.user.email || '已登录') : '未登录'}<small id="sync-state">${esc(syncStatusText())}</small></div></div>
+        ${SYNC.on ? '<button class="btn btn-soft btn-sm" id="sync-now">立即同步</button>' : '<button class="btn btn-pri btn-sm" id="sync-login">登录 / 注册</button>'}
+      </div>
+      ${SYNC.on ? '<button class="btn btn-ghost btn-block btn-sm" id="sync-out" style="margin-top:10px">退出登录</button>' : ''}
+      <div class="muted" style="margin-top:8px;line-height:1.8">登录后学习进度自动上传云端，换设备登录即可恢复；AI API Key 不会上传。</div>
+    </div>` : '';
+
   app.innerHTML = `
   <div class="page">
     <div class="ph"><div><h1>👤 我的</h1><div class="sub">学习数据与设置</div></div></div>
@@ -1991,6 +2005,8 @@ function renderMe() {
       <div class="muted" style="line-height:1.8;margin-top:6px">优先级：在线高音质 → 网络词典发音 → 系统语音。单词用词典真人录音；整句朗读时若本机无语音引擎（常见于 OPPO/vivo），自动降级为逐词真人发音。没声音请检查手机「媒体音量」：播放时长按音量+键。</div>
     </div>
 
+    ${syncCard}
+
     <div class="card">
       <h3>💾 备份与恢复（防丢失）</h3>
       <div class="muted" style="margin-bottom:6px;line-height:1.8">学习数据保存在本机浏览器。换手机 / 给朋友用 / 防清理丢失，请定期生成「备份码」保存到备忘录。</div>
@@ -2037,12 +2053,16 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        徐老师的英语学习网站 v2.8<br>
+        徐老师的英语学习网站 v3.0<br>
         词库：四六级核心 ${CORE_WORDS.length} 词 + 四级完整大纲 ${CET4_WORDS.length} 词（真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
-        数据双重保存在本机（localStorage + IndexedDB 自动互备），不上传任何服务器。
+        数据双重保存在本机（localStorage + IndexedDB 自动互备）${syncReady() ? '，登录后可自动同步到云端' : '，不上传任何服务器'}。
       </div>
     </div>
   </div>`;
+
+  $('#sync-login')?.addEventListener('click', () => openAuthSheet('login'));
+  $('#sync-now')?.addEventListener('click', async () => { toast('正在同步…', '☁️'); await syncPull(); renderMe(); });
+  $('#sync-out')?.addEventListener('click', async () => { await syncLogout(); toast('已退出登录，本机数据保留', '👋'); renderMe(); });
 
   $('#goal-seg').addEventListener('click', e => {
     const b = e.target.closest('[data-g]'); if (!b) return;
@@ -2181,6 +2201,241 @@ const focusStyle = document.createElement('style');
 focusStyle.textContent = 'body.focus .tabbar{display:none} body.focus #app{padding-bottom:calc(16px + env(safe-area-inset-bottom))}';
 document.head.appendChild(focusStyle);
 
+/* ================= 账号与云端同步（CloudBase） ================= */
+const SYNC = {
+  env: 'xusuyang-d3g3zq9i23805a168',
+  key: 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImUwZDBjMzkzLTUyNmUtNGMwMS1iMzYwLTc2ZTVjYWJhMDU1NiJ9.eyJpc3MiOiJodHRwczovL3h1c3V5YW5nLWQzZzN6cTlpMjM4MDVhMTY4LmFwLXNoYW5naGFpLnRjYi1hcGkudGVuY2VudGNsb3VkYXBpLmNvbSIsInN1YiI6ImFub24iLCJhdWQiOiJ4dXN1eWFuZy1kM2czenE5aTIzODA1YTE2OCIsImV4cCI6NDA5OTIwMzgzOSwiaWF0IjoxNzk1NTIwNjM5LCJub25jZSI6IjRoSGhhQWN4VFpLdlhObGFqWHVOUkEiLCJhdF9oYXNoIjoiNGhIaGFBY3hUWkt2WE5sYWpYdU5SQSIsIm5hbWUiOiJBbm9ueW1vdXMiLCJzY29wZSI6ImFub255bW91cyIsInByb2plY3RfaWQiOiJ4dXN1eWFuZy1kM2czenE5aTIzODA1YTE2OCIsIm1ldGEiOnsicGxhdGZvcm0iOiJQdWJsaXNoYWJsZUtleSJ9LCJyb2xlIjoiYW5vbiIsImlzX2Fub255bW91cyI6dHJ1ZSwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiYW5vbnltb3VzIiwicHJvdmlkZXJzIjpbImFub255bW91cyJdfSwidXNlcl9tZXRhZGF0YSI6eyJuYW1lIjoiQW5vbnltb3VzIn0sInVzZXJfdHlwZSI6IiIsImNsaWVudF90eXBlIjoiY2xpZW50X3VzZXIiLCJpc19zeXN0ZW1fYWRtaW4iOmZhbHNlfQ.R1xy1txyCEizvYX9itFHnPz6m_fKLyeDDGxW3uREd8d6XE3QsukT80Ellz-jIkYDGWnc1gxr90hZNAJmB9Zag6iGcJZKcWiBadO4GpvC_PsMV_jk_0mznfG_CqOJTLyCcW6Bq0s8ugq4-JKVuo4Rg0_M54vfxlxSPCgt7Qbyp6sYJGp6ZCZJizj4LU59L6Q2PRwmhuOvz8yQJ6pr-gzreZ25iphvKwdDki9KrMQxXZcMt0mHTJkUYYqT42z_W0QVzAyVIDIBzebFwO1-yOQruYTDPt869J2uun65BSxPvg6Fz-0nEVKJG_X41qeQCzuK63_3oT4HuIc1cha2RgVR9g',
+  sdk: 'https://static.cloudbase.net/cloudbase-js-sdk/3.11.0/cloudbase.full.js',
+  table: 'user_state',
+  app: null, auth: null, db: null, user: null, on: false,
+  timer: null, busy: false, mute: false, status: 'off',
+  meta: { uid: '', at: 0 },
+};
+const SYNC_META_KEY = 'ieltsCoachSyncV1';
+try { Object.assign(SYNC.meta, JSON.parse(localStorage.getItem(SYNC_META_KEY) || '{}')); } catch (e) {}
+let _pendingSignup = null;
+
+const syncReady = () => !!(SYNC.env && SYNC.key);
+const syncUid = () => (SYNC.user && (SYNC.user.id || SYNC.user.uid)) || '';
+function syncSaveMeta() { try { localStorage.setItem(SYNC_META_KEY, JSON.stringify(SYNC.meta)); } catch (e) {} }
+function syncStatusText() {
+  if (!syncReady()) return '未配置云端 · 本地模式';
+  if (!SYNC.on) return '未登录 · 数据只存本机';
+  return { sync: '同步中…', ok: '已同步', err: '同步失败，稍后自动重试' }[SYNC.status] || '已登录';
+}
+function syncPaint() {
+  const el = document.getElementById('sync-state');
+  if (el) el.textContent = syncStatusText();
+}
+function syncSetStatus(s) { SYNC.status = s; syncPaint(); }
+
+function loadScriptOnce(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector('script[data-cb-sdk]')) return res();
+    const s = document.createElement('script');
+    s.src = src; s.dataset.cbSdk = '1';
+    s.onload = res;
+    s.onerror = () => rej(new Error('CloudBase SDK 加载失败，请检查网络'));
+    document.head.appendChild(s);
+  });
+}
+async function syncEnsureApp() {
+  if (!syncReady()) throw new Error('云端同步未配置');
+  if (SYNC.app) return SYNC.app;
+  if (!window.cloudbase) await loadScriptOnce(SYNC.sdk);
+  if (!window.cloudbase) throw new Error('CloudBase SDK 不可用');
+  SYNC.app = cloudbase.init({ env: SYNC.env, accessKey: SYNC.key });
+  SYNC.auth = typeof SYNC.app.auth === 'function' ? SYNC.app.auth() : SYNC.app.auth;
+  SYNC.db = typeof SYNC.app.rdb === 'function' ? SYNC.app.rdb() : null;
+  if (!SYNC.db) throw new Error('当前环境未开启 PG 数据库，无法同步');
+  return SYNC.app;
+}
+
+function rdbCheck(res, what) {
+  if (res && res.error) throw new Error(res.error.message || (what + '失败'));
+  return res;
+}
+
+async function syncBoot() {
+  syncPaint();
+  if (!syncReady()) return;
+  try {
+    await syncEnsureApp();
+    const res = await SYNC.auth.getSession();
+    const sess = res && res.data && res.data.session;
+    const u = sess && sess.user;
+    if (u) { SYNC.user = u; SYNC.on = true; await syncPull(true); }
+  } catch (e) {
+    syncSetStatus('err');
+  }
+  syncPaint();
+}
+
+async function syncLogin(email, pw) {
+  await syncEnsureApp();
+  const { data, error } = await SYNC.auth.signInWithPassword({ email, password: pw });
+  if (error) throw new Error(error.message || '登录失败');
+  SYNC.user = (data && (data.user || (data.session && data.session.user))) || null;
+  SYNC.on = !!SYNC.user;
+  if (!SYNC.on) throw new Error('登录状态异常，请重试');
+  await syncPull(true);
+}
+async function syncRegisterStart(email, pw) {
+  await syncEnsureApp();
+  const { data, error } = await SYNC.auth.signUp({ email, password: pw });
+  if (error) throw new Error(error.message || '注册失败');
+  if (data && typeof data.verifyOtp === 'function') { _pendingSignup = data; return false; }
+  /* 环境关闭了邮箱验证时，注册即登录 */
+  const u = data && (data.user || (data.session && data.session.user));
+  if (!u && !(data && data.session)) throw new Error('若该邮箱已注册，请直接登录');
+  SYNC.user = u || null;
+  SYNC.on = !!SYNC.user;
+  _pendingSignup = null;
+  if (SYNC.on) await syncPull(true);
+  return SYNC.on;
+}
+async function syncRegisterVerify(code) {
+  if (!_pendingSignup) throw new Error('请先获取验证码');
+  const { data, error } = await _pendingSignup.verifyOtp({ token: code });
+  if (error) throw new Error(error.message || '验证码不正确');
+  SYNC.user = (data && (data.user || (data.session && data.session.user))) || null;
+  SYNC.on = !!SYNC.user;
+  _pendingSignup = null;
+  if (!SYNC.on) throw new Error('注册成功但登录状态异常，请直接登录');
+  await syncPull(true);
+}
+async function syncLogout() {
+  try { await SYNC.auth.signOut(); } catch (e) {}
+  SYNC.user = null; SYNC.on = false; SYNC.status = 'off';
+  syncPaint();
+}
+
+function syncTouch() {
+  if (!SYNC.on || SYNC.mute) return;
+  SYNC.meta = { uid: syncUid(), at: Date.now() };
+  syncSaveMeta();
+  clearTimeout(SYNC.timer);
+  SYNC.timer = setTimeout(() => syncPush(), 2500);
+}
+
+async function syncPush() {
+  if (!SYNC.on) return;
+  if (SYNC.busy) { clearTimeout(SYNC.timer); SYNC.timer = setTimeout(() => syncPush(), 1500); return; }
+  SYNC.busy = true; syncSetStatus('sync');
+  try {
+    const payload = JSON.parse(JSON.stringify(S));
+    delete payload.ai; // 用户 API Key 不上云
+    const at = Date.now();
+    const uid = syncUid();
+    if (!uid) throw new Error('未获取到用户 ID');
+    rdbCheck(await SYNC.db.from(SYNC.table).upsert(
+      { owner_id: uid, data: payload, updated_at: at, schema_v: S.schemaV || 4 },
+      { onConflict: 'owner_id' }
+    ), '云端写入');
+    SYNC.meta = { uid: syncUid(), at };
+    syncSaveMeta();
+    syncSetStatus('ok');
+  } catch (e) {
+    syncSetStatus('err');
+    clearTimeout(SYNC.timer);
+    SYNC.timer = setTimeout(() => syncPush(), 8000);
+  } finally {
+    SYNC.busy = false;
+  }
+}
+
+async function syncPull(silent) {
+  if (!SYNC.on) return;
+  syncSetStatus('sync');
+  try {
+    const uid = syncUid();
+    const q = rdbCheck(await SYNC.db.from(SYNC.table).select('data, updated_at').limit(1), '云端读取');
+    const doc = (q.data || [])[0];
+    const localAt = SYNC.meta.uid === uid ? (SYNC.meta.at || 0) : 0;
+    if (!doc) { await syncPush(); return; }
+    const remoteAt = Number(doc.updated_at) || 0;
+    if (remoteAt > localAt) {
+      syncApplyRemote(doc);
+      if (!silent) toast('已从云端同步最新进度', '☁️');
+    } else if (localAt > remoteAt) {
+      await syncPush();
+    } else {
+      syncSetStatus('ok');
+    }
+  } catch (e) {
+    syncSetStatus('err');
+  }
+}
+
+function syncApplyRemote(doc) {
+  SYNC.mute = true;
+  try {
+    const keepAi = S.ai;
+    S = Object.assign(JSON.parse(JSON.stringify(DEFAULT_S)), doc.data || {});
+    S.ai = keepAi;
+    migrateState();
+  } finally {
+    SYNC.mute = false;
+  }
+  SYNC.meta = { uid: syncUid(), at: Number(doc.updated_at) || Date.now() };
+  syncSaveMeta();
+  syncSetStatus('ok');
+  if (!document.body.classList.contains('focus')) render();
+}
+
+function openAuthSheet(mode) {
+  const sheet = $('#sheet'), mask = $('#sheetMask');
+  const reg = mode === 'reg';
+  sheet.innerHTML = `<div class="grab"></div>
+    <h2>☁️ ${reg ? '注册账号' : '账号登录'}</h2>
+    <div class="muted" style="margin:4px 0 14px;line-height:1.7">${reg ? '用邮箱 + 密码注册，登录后手机和电脑的进度自动一致。' : '登录后，手机和电脑的进度自动保持一致。'}</div>
+    <input class="auth-inp" id="au-email" type="email" inputmode="email" autocomplete="email" placeholder="邮箱">
+    <input class="auth-inp" id="au-pw" type="password" autocomplete="${reg ? 'new-password' : 'current-password'}" placeholder="密码（至少 6 位）">
+    ${reg ? `<button class="btn btn-pri btn-block" id="au-send">注册</button>
+      <div id="au-step2" style="display:none;margin-top:12px">
+        <input class="auth-inp" id="au-code" inputmode="numeric" maxlength="6" placeholder="邮箱里的 6 位验证码">
+        <button class="btn btn-pri btn-block" id="au-done">完成注册并登录</button>
+      </div>` : '<button class="btn btn-pri btn-block" id="au-login">登录</button>'}
+    <button class="btn btn-ghost btn-block" id="au-switch" style="margin-top:10px">${reg ? '已有账号，去登录' : '没有账号？用邮箱注册'}</button>
+    <div class="muted" id="au-msg" style="margin-top:10px;min-height:1.2em"></div>`;
+  mask.classList.add('show'); sheet.classList.add('show');
+  const msg = t => { const el = $('#au-msg'); if (el) el.textContent = t; };
+  const email = () => ($('#au-email').value || '').trim();
+  const pw = () => ($('#au-pw').value || '');
+  const done = () => { closeSheet(); toast('已登录，进度开始自动同步', '☁️'); if (location.hash.startsWith('#me')) renderMe(); };
+
+  $('#au-switch').addEventListener('click', () => openAuthSheet(reg ? 'login' : 'reg'));
+  if (reg) {
+    $('#au-send').addEventListener('click', async () => {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email())) return msg('请填写正确的邮箱');
+      if (pw().length < 6) return msg('密码至少 6 位');
+      const btn = $('#au-send'); btn.disabled = true; msg('正在注册…');
+      try {
+        const loggedIn = await syncRegisterStart(email(), pw());
+        if (loggedIn) return done();
+        $('#au-step2').style.display = 'block';
+        msg('验证码已发送，请查收邮箱（含垃圾箱）');
+        btn.textContent = '重新发送验证码';
+      } catch (e) { msg(e.message); }
+      btn.disabled = false;
+    });
+    $('#au-done').addEventListener('click', async () => {
+      const code = ($('#au-code').value || '').trim();
+      if (!code) return msg('请输入验证码');
+      const btn = $('#au-done'); btn.disabled = true; msg('正在验证…');
+      try { await syncRegisterVerify(code); done(); }
+      catch (e) { msg(e.message); btn.disabled = false; }
+    });
+  } else {
+    $('#au-login').addEventListener('click', async () => {
+      if (!email() || !pw()) return msg('请填写邮箱和密码');
+      const btn = $('#au-login'); btn.disabled = true; msg('正在登录…');
+      try { await syncLogin(email(), pw()); done(); }
+      catch (e) { msg(e.message); btn.disabled = false; }
+    });
+  }
+}
+
 /* ---------- boot ---------- */
 window.copyText = copyText;
 window.startSession = startSession;
@@ -2201,7 +2456,10 @@ $('#sheet').addEventListener('click', e => { if (e.target.classList.contains('gr
     render();
   }
   if (_recovered > 0) toast(`检测到主存储丢失，已自动恢复 ${_recovered} 词进度`, '♻️');
+  syncBoot();
 })();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && SYNC.on) syncPull(true); });
+window.addEventListener('online', () => { if (SYNC.on) syncPull(true); });
 
 </script>
 </body>

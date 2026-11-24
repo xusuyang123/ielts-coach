@@ -908,7 +908,6 @@ const TABS = [
   { id: 'home', icon: '🏠', label: '首页' },
   { id: 'train', icon: '📚', label: '背单词' },
   { id: 'book', icon: '📖', label: '词汇本' },
-  { id: 'ai', icon: '🤖', label: 'AI教练' },
   { id: 'me', icon: '👤', label: '我的' },
 ];
 function renderTabbar() {
@@ -920,7 +919,7 @@ function renderTabbar() {
   document.body.classList.toggle('focus', focusMode);
 }
 
-const TAB_ORDER = ['home','train','book','ai','me','story'];
+const TAB_ORDER = ['home','train','book','me','story'];
 let lastRoute = '';
 function render() {
   ensureDay();
@@ -936,7 +935,7 @@ function render() {
     else if (a >= 0 && b < 0) dir = 'up';
     document.documentElement.setAttribute('data-trans', dir);
     lastRoute = route;
-    if (TAB_ORDER.slice(0, 5).includes(cur)) { S.lastTab = cur; save(); }
+    if (TAB_ORDER.slice(0, 4).includes(cur)) { S.lastTab = cur; save(); }
   }
   const [page, sub] = route.split('/');
   renderTabbar();
@@ -1051,7 +1050,7 @@ function renderHome() {
     <div class="card">
       <h3>💡 AI 使用提示</h3>
       <div class="muted" style="line-height:1.9">
-        没配 AI 时，各功能的指令卡可一键复制，粘贴到 DeepSeek / Kimi / 豆包 使用；配置 Key 后（AI教练页），结果直接显示在页面里。词库全部离线可用，数据保存在本机浏览器。
+        没配 AI 时，各功能的指令卡可一键复制，粘贴到 DeepSeek / Kimi / 豆包 使用；配置 Key 后（我的 → AI 教练），结果直接显示在页面里。词库全部离线可用，数据保存在本机浏览器。
       </div>
     </div>
   </div>`;
@@ -1520,7 +1519,7 @@ function renderAI() {
   const hasKey = !!S.ai.key;
   app.innerHTML = `
   <div class="page">
-    <div class="ph"><div><h1>🤖 AI 教练</h1><div class="sub">阅读·听力·写作 精讲中心</div></div></div>
+    <div class="ph"><div><h1>🤖 AI 教练</h1><div class="sub">阅读·听力·写作 精讲中心</div></div><button class="btn btn-ghost btn-sm" id="ai-back">← 返回</button></div>
 
     <div class="card">
       <h3>${hasKey ? '✅ 已配置 API' : '🔌 API 配置（可选）'}</h3>
@@ -1562,6 +1561,7 @@ function renderAI() {
     catch (e) { tip.textContent = '❌ ' + e.message; }
   });
   app.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => openToolModal(b.dataset.tool)));
+  $('#ai-back')?.addEventListener('click', () => nav('me'));
 }
 
 function openToolModal(toolId, prefillWord) {
@@ -1937,6 +1937,8 @@ function renderMe() {
   <div class="page">
     <div class="ph"><div><h1>👤 我的</h1><div class="sub">学习数据与设置</div></div></div>
 
+    ${syncCard}
+
     <div class="lvlbar">
       <div class="lt"><b>🏅 ${esc(lv.name)}</b><span>${S.exp} EXP</span></div>
       <div class="lb"><i style="width:${pct}%"></i></div>
@@ -1977,13 +1979,20 @@ function renderMe() {
     </div>
 
     <div class="card">
+      <div class="setrow">
+        <div class="lab"><span class="ic">🤖</span><div>AI 教练<small>配置 API Key 后可批改、生成练习与语音</small></div></div>
+        <button class="btn btn-soft btn-sm" id="goto-ai">进入</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>🎙️ 语音设置</h3>
       <div class="setrow">
         <div class="lab"><span class="ic">📶</span><div>网络词典发音<small>真人录音 · 全手机可用（含微信内）· 需联网</small></div></div>
         <div class="switch ${S.ttsNet !== false ? 'on' : ''}" id="ttsnet-sw"></div>
       </div>
       <div class="setrow">
-        <div class="lab"><span class="ic">☁️</span><div>在线高音质语音<small>${S.ai.key ? '神经网络语音 · 走已配 API Key，开启后优先于网络发音' : '需先在「AI教练」页配置 API Key（OpenAI 兼容接口）'}</small></div></div>
+        <div class="lab"><span class="ic">☁️</span><div>在线高音质语音<small>${S.ai.key ? '神经网络语音 · 走已配 API Key，开启后优先于网络发音' : '需先在「我的 → AI 教练」配置 API Key（OpenAI 兼容接口）'}</small></div></div>
         <div class="switch ${S.ttsCloud ? 'on' : ''}" id="ttscloud-sw"></div>
       </div>
       <div class="setrow">
@@ -2004,8 +2013,6 @@ function renderMe() {
       </div>
       <div class="muted" style="line-height:1.8;margin-top:6px">优先级：在线高音质 → 网络词典发音 → 系统语音。单词用词典真人录音；整句朗读时若本机无语音引擎（常见于 OPPO/vivo），自动降级为逐词真人发音。没声音请检查手机「媒体音量」：播放时长按音量+键。</div>
     </div>
-
-    ${syncCard}
 
     <div class="card">
       <h3>💾 备份与恢复（防丢失）</h3>
@@ -2053,7 +2060,7 @@ function renderMe() {
     <div class="card">
       <h3>ℹ️ 关于</h3>
       <div class="muted" style="line-height:2">
-        徐老师的英语学习网站 v3.0<br>
+        徐老师的英语学习网站 v3.1<br>
         词库：四六级核心 ${CORE_WORDS.length} 词 + 四级完整大纲 ${CET4_WORDS.length} 词（真题例句 ${CET4_HF.length} 词）+ 雅思核心精选 ${IELTS_CORE.length} 词<br>
         数据双重保存在本机（localStorage + IndexedDB 自动互备）${syncReady() ? '，登录后可自动同步到云端' : '，不上传任何服务器'}。
       </div>
@@ -2063,6 +2070,7 @@ function renderMe() {
   $('#sync-login')?.addEventListener('click', () => openAuthSheet('login'));
   $('#sync-now')?.addEventListener('click', async () => { toast('正在同步…', '☁️'); await syncPull(); renderMe(); });
   $('#sync-out')?.addEventListener('click', async () => { await syncLogout(); toast('已退出登录，本机数据保留', '👋'); renderMe(); });
+  $('#goto-ai')?.addEventListener('click', () => nav('ai'));
 
   $('#goal-seg').addEventListener('click', e => {
     const b = e.target.closest('[data-g]'); if (!b) return;
@@ -2079,7 +2087,7 @@ function renderMe() {
     toast(S.ttsNet !== false ? '网络词典发音已开启' : '网络词典发音已关闭', '📶');
   });
   $('#ttscloud-sw').addEventListener('click', () => {
-    if (!S.ai.key && !S.ttsCloud) return toast('请先在「AI教练」页配置 API Key（OpenAI 接口支持语音）', '💡');
+    if (!S.ai.key && !S.ttsCloud) return toast('请先在「我的 → AI 教练」配置 API Key（OpenAI 接口支持语音）', '💡');
     S.ttsCloud = !S.ttsCloud; save(); renderMe();
     if (S.ttsCloud) toast('已开启在线高音质语音（优先于网络发音）', '☁️');
   });
